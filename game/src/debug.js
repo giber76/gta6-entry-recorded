@@ -4,6 +4,7 @@
 
 import { setWanted } from './police.js';
 import { startMission } from './missions.js';
+import { damageCar } from './vehicles.js';
 
 // Round to one decimal place, for the snapshot's numeric fields.
 function round1(v) {
@@ -97,6 +98,36 @@ export function initDebug(G) {
     setMission(i) {
       if (i >= 0 && i < 6) startMission(G, i);
       return api.state();
+    },
+
+    // Damage the nearest parked car (play-test hook for the car damage
+    // system). Returns the car's health after the hit, or null.
+    damageNearestCar(amount) {
+      const cars = (G.parkedCars || []).filter((c) => !c.wrecked && !c.dead);
+      if (!cars.length) return null;
+      const p = G.player;
+      const car = cars.reduce((best, c) => {
+        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+        const bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+        return d < bd ? c : best;
+      });
+      damageCar(G, car, amount);
+      return car.health;
+    },
+
+    // Wreck the nearest parked car outright (play-test hook for the
+    // explosion, ejection and respawn paths).
+    wreckNearestCar() {
+      const cars = (G.parkedCars || []).filter((c) => !c.wrecked && !c.dead);
+      if (!cars.length) return null;
+      const p = G.player;
+      const car = cars.reduce((best, c) => {
+        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+        const bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+        return d < bd ? c : best;
+      });
+      damageCar(G, car, 999);
+      return car.wrecked;
     },
 
     givePistol() {

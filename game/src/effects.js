@@ -112,9 +112,57 @@ export function explodeCar(G, x, z) {
     });
   }
   flashLight(G, x, z);
+  spawnDebris(G, x, z, 8);
   G.effects.shake = Math.min(1.6, G.effects.shake + 1.1);
   if (G.audio) G.audio.explosion();
   fleeFromBlast(G, x, z);
+}
+
+// A muzzle flash: a brief bright star at the gun's mouth, plus a
+// couple of fast sparks flying forward along the shot direction.
+export function spawnMuzzleFlash(G, x, y, z, dirX, dirZ) {
+  if (!G.effects) return;
+  spawnParticle(G, x, y, z, {
+    color: 0xffe08a,
+    size: 0.7,
+    vx: dirX * 2,
+    vy: 0.5,
+    vz: dirZ * 2,
+    life: 0.09,
+    grow: 1,
+    opacity: 1,
+  });
+  for (let i = 0; i < 3; i++) {
+    const spread = randRange(-0.4, 0.4);
+    spawnParticle(G, x, y, z, {
+      color: 0xffd23c,
+      size: 0.14,
+      vx: dirX * randRange(8, 12) - dirZ * spread * 8,
+      vy: randRange(0, 2),
+      vz: dirZ * randRange(8, 12) + dirX * spread * 8,
+      life: randRange(0.15, 0.3),
+      gravity: -6,
+    });
+  }
+}
+
+// Tumbling debris from a wreck: dark chunks that arc out, bounce once
+// on the ground and lie still until they fade.
+export function spawnDebris(G, x, z, count) {
+  if (!G.effects) return;
+  for (let i = 0; i < count; i++) {
+    const a = randRange(0, Math.PI * 2);
+    const sp = randRange(3, 9);
+    spawnParticle(G, x, 1, z, {
+      color: 0x2c2f33,
+      size: randRange(0.25, 0.5),
+      vx: Math.cos(a) * sp,
+      vy: randRange(3, 6),
+      vz: Math.sin(a) * sp,
+      life: randRange(0.8, 1.4),
+      gravity: -14,
+    });
+  }
 }
 
 // A puff of tyre smoke at the rear wheels while handbraking at speed.

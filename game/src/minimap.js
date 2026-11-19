@@ -159,6 +159,12 @@ export function createMinimap(G) {
     drawCars();
     drawHostiles();
     drawPlayerArrow();
+    // North indicator (top edge, centred on the map).
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('N', c.width / 2, 16);
+    ctx.textAlign = 'left';
     // Zoom level, bottom-left of the map.
     const zoom = G.minimapZoom ?? 1;
     ctx.fillStyle = 'rgba(255,255,255,0.85)';

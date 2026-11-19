@@ -12,6 +12,7 @@
 import { scatterPeds } from './pedestrians.js';
 import { damagePlayer } from './player.js';
 import { damageCar } from './vehicles.js';
+import { spawnMuzzleFlash } from './effects.js';
 
 const WEAPONS = {
   fists: { damage: 25, reach: 2.4, cooldown: 0.4 },
@@ -209,6 +210,7 @@ function firePistol(G) {
   const muzzle = driving
     ? new THREE.Vector3(p.car.pos.x + dir.x * 1.2, 1.35, p.car.pos.z + dir.z * 1.2)
     : gunMuzzle(G);
+  spawnMuzzleFlash(G, muzzle.x, muzzle.y, muzzle.z, dir.x, dir.z);
   drawTracer(G, muzzle, end);
 }
 

@@ -57,6 +57,7 @@ export function setWanted(G, level) {
 export function raiseWanted(G, amount, reason) {
   if (G.wanted >= 5) return;
   setWanted(G, G.wanted + amount);
+  if (G.audio) G.audio.wantedUp();
   if (G.hud) G.hud.toast(`Wanted level ${G.wanted} — ${reason}`);
 }
 

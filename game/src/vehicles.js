@@ -156,6 +156,7 @@ export function wreckCar(G, car) {
     // Marlo is thrown clear of the wreck, on foot and hurt.
     stepOut(G);
     damagePlayer(G, 10, 'car explosion');
+    if (G.hud) G.hud.toast('Your car exploded — find another ride');
   }
   if (G.audio) G.audio.crash();
 }
@@ -342,6 +343,7 @@ export function tryEnterExitCar(G) {
   p.group.visible = false;
   p.pos.x = car.pos.x;
   p.pos.z = car.pos.z;
+  if (G.audio) G.audio.engineStart();
   if (G.onCarStolen) G.onCarStolen(car);
 }
 

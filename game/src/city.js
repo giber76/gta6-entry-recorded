@@ -30,6 +30,8 @@ export const LOCATIONS = {
   safehouse: { x: 140, z: 80, name: 'Boardwalk Safehouse' },
   start: { x: 12, z: 30, name: 'Plaza steps' },
   bossCoupe: { x: 128, z: 48, name: 'Boss coupe' },
+  // The last open ground before the water, past Marina East.
+  beach: { x: 158, z: 60, name: 'Solara Beach' },
 };
 
 // Make a mesh, put it where it belongs, set its shadow flags, add it.

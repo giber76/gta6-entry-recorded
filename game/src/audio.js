@@ -77,6 +77,22 @@ const PATTERNS = {
     { at: 260, freq: 784, dur: 0.22, wave: 'triangle', vol: 0.3 },
     { at: 390, freq: 1046, dur: 0.22, wave: 'triangle', vol: 0.3 },
   ],
+  // A new job starts: a short rising figure that says "go".
+  missionStart: [
+    { at: 0, freq: 392, dur: 0.12, wave: 'triangle', vol: 0.28 },
+    { at: 110, freq: 523, dur: 0.12, wave: 'triangle', vol: 0.28 },
+    { at: 220, freq: 659, dur: 0.2, wave: 'triangle', vol: 0.3 },
+  ],
+  // The heat goes up: a low two-note warning.
+  wantedUp: [
+    { at: 0, freq: 220, dur: 0.16, wave: 'sawtooth', vol: 0.2, slide: 180 },
+    { at: 150, freq: 233, dur: 0.2, wave: 'sawtooth', vol: 0.2, slide: 175 },
+  ],
+  // The engine turning over when Marlo steals a car.
+  engineStart: [
+    { at: 0, freq: 60, dur: 0.3, wave: 'sawtooth', vol: 0.25, slide: 110 },
+    { at: 260, freq: 110, dur: 0.15, wave: 'sawtooth', vol: 0.2, slide: 165 },
+  ],
 };
 
 export function createAudio() {
@@ -314,6 +330,21 @@ export function createAudio() {
     win() {
       if (!buildContext()) return;
       playPattern(PATTERNS.win);
+    },
+
+    missionStart() {
+      if (!buildContext()) return;
+      playPattern(PATTERNS.missionStart);
+    },
+
+    wantedUp() {
+      if (!buildContext()) return;
+      playPattern(PATTERNS.wantedUp);
+    },
+
+    engineStart() {
+      if (!buildContext()) return;
+      playPattern(PATTERNS.engineStart);
     },
 
     nextStation() {

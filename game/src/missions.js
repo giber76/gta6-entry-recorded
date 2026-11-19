@@ -203,6 +203,7 @@ export function startMission(G, index) {
   const def = MISSIONS[index];
   if (!def) return;
   showDialogue(G, def.brief);
+  if (G.audio) G.audio.missionStart();
   SETUPS[index](G);
   if (G.hud) G.hud.setMission(def.name, index + 1, MISSIONS.length);
 }
