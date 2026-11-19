@@ -147,6 +147,13 @@ export function damageCar(G, car, amount) {
   wreckCar(G, car);
 }
 
+// Put a car back to full health (debug hook). A wrecked car stays
+// wrecked — only a live car can be repaired.
+export function repairCar(G, car) {
+  if (!car || car.wrecked) return;
+  car.health = 100;
+}
+
 export function wreckCar(G, car) {
   car.wrecked = true;
   car.wreckTimer = 8;

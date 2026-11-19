@@ -167,11 +167,18 @@ export function createAudio() {
   // step plays the station's bass note, lead note and (on even steps)
   // a hi-hat tick. R cycles the station; the HUD reads the name.
   function buildRadio() {
-    const radio = { index: 0, step: 0, timer: 0 };
+    // fresh: the first R press after the radio is built returns the
+    // current station (SOLARA FM) without advancing — the station the
+    // radio starts on is the one the first press should show.
+    const radio = { index: 0, step: 0, timer: 0, fresh: true };
     radio.name = function () {
       return STATIONS[radio.index].name;
     };
     radio.next = function () {
+      if (radio.fresh) {
+        radio.fresh = false;
+        return radio.name();
+      }
       radio.index = (radio.index + 1) % STATIONS.length;
       radio.step = 0;
       radio.timer = 0;
@@ -364,6 +371,13 @@ export function createAudio() {
 
     stationName() {
       return state.radio ? state.radio.name() : STATIONS[0].name;
+    },
+
+    // The station label for the debug snapshot: 'RADIO OFF' until the
+    // radio has actually been built (unlike stationName, which names
+    // the first station even when there is no radio yet).
+    radioLabel() {
+      return state.radio ? state.radio.name() : 'RADIO OFF';
     },
 
     stationIndex() {

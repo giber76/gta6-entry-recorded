@@ -4,7 +4,7 @@
 
 import { setWanted } from './police.js';
 import { startMission } from './missions.js';
-import { damageCar } from './vehicles.js';
+import { damageCar, repairCar } from './vehicles.js';
 
 // Round to one decimal place, for the snapshot's numeric fields.
 function round1(v) {
@@ -29,6 +29,9 @@ function snapshotDynamic(G, p) {
     nearestPolice: nearestGap(G.policeCars, p),
     nearestOfficer: nearestGap(G.officers, p),
     carHealth: p.inCar && p.car ? Math.round(p.car.health) : null,
+    // Parked cars still standing (not wrecked) — the drive-by test
+    // needs a live target count.
+    parkedCars: (G.parkedCars || []).filter((c) => !c.wrecked).length,
     // Running tally of Vipers Marlo has taken down this session.
     kills: G.kills || 0,
     elapsed: round1(G.elapsed ?? 0),
@@ -51,6 +54,8 @@ export function initDebug(G) {
         inCar: p.inCar,
         weapon: p.weapon,
         hasPistol: p.hasPistol,
+        radio: G.audio ? G.audio.radioLabel() : 'RADIO OFF',
+        mapZoom: G.minimapZoom ?? 1,
         ...snapshotDynamic(G, p),
       };
     },
@@ -130,6 +135,57 @@ export function initDebug(G) {
       });
       damageCar(G, car, 999);
       return car.wrecked;
+    },
+
+    // Damage the car Marlo is driving, or the nearest non-wrecked
+    // police / traffic / parked car when he is on foot. Returns the
+    // full state (the test reads carHealth from it).
+    damageCar(amount) {
+      const p = G.player;
+      let car = null;
+      if (p.inCar && p.car) {
+        car = p.car;
+      } else {
+        const cars = [...(G.policeCars || []), ...(G.trafficCars || []), ...(G.parkedCars || [])].filter(
+          (c) => !c.wrecked && !c.dead
+        );
+        let bestD = Infinity;
+        for (const c of cars) {
+          const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+          if (d < bestD) {
+            bestD = d;
+            car = c;
+          }
+        }
+      }
+      if (car) damageCar(G, car, amount);
+      return api.state();
+    },
+
+    // Repair the car Marlo is driving back to full health.
+    repairCar() {
+      const p = G.player;
+      if (p.inCar && p.car) repairCar(G, p.car);
+      return api.state();
+    },
+
+    // Point the camera at the nearest parked car that is not Marlo's
+    // own and not wrecked, so a drive-by shot has a parked target.
+    faceNearestParkedCar() {
+      const p = G.player;
+      const cars = (G.parkedCars || []).filter((c) => !c.wrecked && !c.dead && c !== p.car);
+      if (!cars.length) return api.state();
+      const mark = cars.reduce((best, c) => {
+        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+        const bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+        return d < bd ? c : best;
+      });
+      const yaw = Math.atan2(mark.pos.x - p.pos.x, mark.pos.z - p.pos.z);
+      p.yaw = yaw;
+      p.group.rotation.y = yaw;
+      // Point the camera at the car too.
+      G.camYaw = yaw;
+      return api.state();
     },
 
     givePistol() {
