@@ -1,45 +1,56 @@
-// util.js — seeded RNG, math helpers and procedural canvas textures for Solara Bay.
-// Nothing here touches the network; every texture is drawn on a canvas at runtime.
+// util.js — deterministic randomness, small math helpers and the procedural
+// canvas textures Solara Bay is built from. Everything here is offline:
+// textures are painted on canvases at runtime, nothing is fetched.
+
+// One mixing step of the mulberry32 generator.
+function mixStep(s) {
+  const t = Math.imul(s ^ (s >>> 15), 1 | s);
+  return (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+}
 
 export function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function next() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  let s = seed >>> 0;
+  return function roll() {
+    s = (s + 0x6d2b79f5) | 0;
+    const mixed = mixStep(s);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
   };
 }
 
+// A small dice bag on top of mulberry32: the city, traffic and pedestrians
+// each take their own bag with a fixed seed, so the world is identical on
+// every load while each system still gets its own stream.
 export function makeRng(seed) {
-  const next = mulberry32(seed);
-  return {
-    next,
-    range(min, max) {
-      return min + next() * (max - min);
+  const roll = mulberry32(seed);
+  const bag = {
+    next: roll,
+    range(lo, hi) {
+      return lo + roll() * (hi - lo);
     },
-    int(min, max) {
-      return Math.floor(min + next() * (max - min + 1));
+    int(lo, hi) {
+      return Math.floor(lo + roll() * (hi - lo + 1));
     },
-    pick(list) {
-      return list[Math.floor(next() * list.length)];
+    pick(items) {
+      return items[Math.floor(roll() * items.length)];
     },
     chance(p) {
-      return next() < p;
+      return roll() < p;
     },
   };
+  return bag;
 }
 
-export function clamp(v, min, max) {
-  return v < min ? min : v > max ? max : v;
+export function clamp(v, lo, hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
 }
 
 export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-// Shortest signed difference between two angles, in radians.
+// Signed shortest turn from angle a to angle b, in radians.
 export function angleDiff(a, b) {
   let d = (b - a) % (Math.PI * 2);
   if (d > Math.PI) d -= Math.PI * 2;
@@ -47,6 +58,7 @@ export function angleDiff(a, b) {
   return d;
 }
 
+// Step `current` toward `target` by at most `maxStep` radians.
 export function turnToward(current, target, maxStep) {
   const d = angleDiff(current, target);
   if (Math.abs(d) <= maxStep) return target;
@@ -59,7 +71,7 @@ export function dist2D(ax, az, bx, bz) {
   return Math.sqrt(dx * dx + dz * dz);
 }
 
-// Draw on a canvas and return it as a three.js texture (caller passes THREE in).
+// Paint on a canvas and hand it back as a three.js texture.
 export function makeCanvasTexture(THREE, width, height, draw) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -72,12 +84,29 @@ export function makeCanvasTexture(THREE, width, height, draw) {
   return tex;
 }
 
-// A building facade: base colour, a grid of lit/unlit windows, a darker ground floor.
+// The window grid of a building face: one lit-or-dark pane per cell,
+// plus a pale highlight along each pane's top edge.
+function paintWindows(ctx, rng, margin, cellW, cellH, floors, cols) {
+  for (let floor = 0; floor < floors; floor++) {
+    for (let col = 0; col < cols; col++) {
+      const x = margin + col * cellW + 3;
+      const y = 8 + floor * cellH + 4;
+      ctx.fillStyle = rng.chance(0.28) ? '#ffd98a' : '#1d2733';
+      ctx.fillRect(x, y, cellW - 6, cellH - 8);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(x, y, cellW - 6, 2);
+    }
+  }
+}
+
+// A building face: flat base colour, a grid of windows (a few lit), and a
+// darker shopfront band along the ground floor.
 export function makeFacadeTexture(THREE, rng, baseColor, floors, cols) {
   return makeCanvasTexture(THREE, 128, 256, (ctx, w, h) => {
     ctx.fillStyle = baseColor;
     ctx.fillRect(0, 0, w, h);
-    // Subtle vertical shading so neighbouring buildings read differently.
+    // A soft left-to-right gradient so two buildings in the same colour
+    // still read as different faces.
     const shade = ctx.createLinearGradient(0, 0, w, 0);
     shade.addColorStop(0, 'rgba(0,0,0,0.18)');
     shade.addColorStop(0.5, 'rgba(255,255,255,0.06)');
@@ -85,30 +114,21 @@ export function makeFacadeTexture(THREE, rng, baseColor, floors, cols) {
     ctx.fillStyle = shade;
     ctx.fillRect(0, 0, w, h);
     const margin = 10;
-    const cw = (w - margin * 2) / cols;
-    const ch = (h - 34) / floors;
-    for (let f = 0; f < floors; f++) {
-      for (let c = 0; c < cols; c++) {
-        const x = margin + c * cw + 3;
-        const y = 8 + f * ch + 4;
-        const lit = rng.chance(0.28);
-        ctx.fillStyle = lit ? '#ffd98a' : '#1d2733';
-        ctx.fillRect(x, y, cw - 6, ch - 8);
-        ctx.fillStyle = 'rgba(255,255,255,0.12)';
-        ctx.fillRect(x, y, cw - 6, 2);
-      }
-    }
-    // Ground floor: shopfront band.
+    const cellW = (w - margin * 2) / cols;
+    const cellH = (h - 34) / floors;
+    paintWindows(ctx, rng, margin, cellW, cellH, floors, cols);
+    // Ground floor shopfronts.
     ctx.fillStyle = '#20242c';
     ctx.fillRect(0, h - 26, w, 26);
     ctx.fillStyle = '#7fd4ff';
-    for (let c = 0; c < cols; c++) {
-      ctx.fillRect(margin + c * cw + 3, h - 21, cw - 6, 14);
+    for (let col = 0; col < cols; col++) {
+      ctx.fillRect(margin + col * cellW + 3, h - 21, cellW - 6, 14);
     }
   });
 }
 
-// A road strip texture with a dashed centre line, drawn along the strip's length.
+// A road strip: dark asphalt, pale edges and a dashed yellow centre line
+// running down its length.
 export function makeRoadTexture(THREE) {
   return makeCanvasTexture(THREE, 64, 256, (ctx, w, h) => {
     ctx.fillStyle = '#2e3138';
@@ -117,8 +137,10 @@ export function makeRoadTexture(THREE) {
     ctx.fillRect(0, 0, 3, h);
     ctx.fillRect(w - 3, 0, 3, h);
     ctx.fillStyle = '#e8c33c';
-    for (let y = 0; y < h; y += 64) {
-      ctx.fillRect(w / 2 - 2, y + 8, 4, 32);
+    let y = 8;
+    while (y < h) {
+      ctx.fillRect(w / 2 - 2, y, 4, 32);
+      y += 64;
     }
   });
 }

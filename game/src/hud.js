@@ -1,49 +1,62 @@
-// hud.js — the Solara Bay HUD: health, cash, wanted stars, objective, prompts,
-// dialogue, toasts, speed and the menu / pause / busted / win screens.
+// hud.js — the Solara Bay HUD: health, cash, wanted stars, objective,
+// prompts, dialogue, toasts, speed and the menu / pause / busted / win screens.
 
 import { nearestParkedCar } from './vehicles.js';
 
+function grab(id) {
+  return document.getElementById(id);
+}
+
+function healthColor(h) {
+  if (h > 50) return '#37c978';
+  if (h > 25) return '#f0a13a';
+  return '#e33d3d';
+}
+
+function money(c) {
+  return `$${c.toLocaleString('en-US')}`;
+}
+
 export function createHud(G) {
-  const $ = (id) => document.getElementById(id);
   const hud = {
-    healthFill: $('health-fill'),
-    healthText: $('health-text'),
-    cashText: $('cash-text'),
-    starsEl: $('stars'),
-    objectiveText: $('objective-text'),
-    objectiveDist: $('objective-dist'),
-    promptEl: $('prompt'),
-    dialogueEl: $('dialogue'),
-    dialogueText: $('dialogue-text'),
-    toastEl: $('toasts'),
-    speedEl: $('speed'),
-    weaponEl: $('weapon'),
-    missionEl: $('mission-name'),
+    healthFill: grab('health-fill'),
+    healthText: grab('health-text'),
+    cashText: grab('cash-text'),
+    starsEl: grab('stars'),
+    objectiveText: grab('objective-text'),
+    objectiveDist: grab('objective-dist'),
+    promptEl: grab('prompt'),
+    dialogueEl: grab('dialogue'),
+    dialogueText: grab('dialogue-text'),
+    toastEl: grab('toasts'),
+    speedEl: grab('speed'),
+    weaponEl: grab('weapon'),
+    missionEl: grab('mission-name'),
     screens: {
-      start: $('screen-start'),
-      pause: $('screen-pause'),
-      busted: $('screen-busted'),
-      win: $('screen-win'),
+      start: grab('screen-start'),
+      pause: grab('screen-pause'),
+      busted: grab('screen-busted'),
+      win: grab('screen-win'),
     },
-    startTitle: $('start-title'),
-    winCash: $('win-cash'),
-    bustedCash: $('busted-cash'),
+    startTitle: grab('start-title'),
+    winCash: grab('win-cash'),
+    bustedCash: grab('busted-cash'),
     toasts: [],
   };
 
   hud.setHealth = function setHealth(h) {
-    hud.healthFill.style.width = `${Math.max(0, Math.min(100, h))}%`;
-    hud.healthFill.style.background = h > 50 ? '#37c978' : h > 25 ? '#f0a13a' : '#e33d3d';
+    const pct = Math.max(0, Math.min(100, h));
+    hud.healthFill.style.width = `${pct}%`;
+    hud.healthFill.style.background = healthColor(h);
     hud.healthText.textContent = `${Math.ceil(h)}`;
   };
 
   hud.setCash = function setCash(c) {
-    hud.cashText.textContent = `$${c.toLocaleString('en-US')}`;
+    hud.cashText.textContent = money(c);
   };
 
   hud.setStars = function setStars(n) {
-    let s = '';
-    for (let i = 0; i < 5; i++) s += i < n ? '★' : '☆';
+    const s = Array.from({ length: 5 }, (_, i) => (i < n ? '★' : '☆')).join('');
     hud.starsEl.textContent = s;
     hud.starsEl.classList.toggle('hot', n > 0);
   };
@@ -63,12 +76,8 @@ export function createHud(G) {
   };
 
   hud.setDialogue = function setDialogue(text) {
-    if (text) {
-      hud.dialogueText.textContent = text;
-      hud.dialogueEl.style.display = 'block';
-    } else {
-      hud.dialogueEl.style.display = 'none';
-    }
+    hud.dialogueText.textContent = text || '';
+    hud.dialogueEl.style.display = text ? 'block' : 'none';
   };
 
   hud.setSpeed = function setSpeed(kmh) {
@@ -91,12 +100,8 @@ export function createHud(G) {
   hud.tickToasts = function tickToasts(dt) {
     for (const t of hud.toasts) {
       t.t += dt;
-      if (t.t > 4) {
-        t.el.style.opacity = '0';
-      }
-      if (t.t > 4.6 && t.el.parentNode) {
-        t.el.parentNode.removeChild(t.el);
-      }
+      if (t.t > 4) t.el.style.opacity = '0';
+      if (t.t > 4.6 && t.el.parentNode) t.el.parentNode.removeChild(t.el);
     }
     hud.toasts = hud.toasts.filter((t) => t.t <= 4.6);
   };
@@ -105,12 +110,37 @@ export function createHud(G) {
     for (const key of Object.keys(hud.screens)) {
       hud.screens[key].style.display = key === name ? 'flex' : 'none';
     }
-    const inGame = name === null;
-    document.getElementById('hud').style.display = inGame ? 'block' : 'none';
+    grab('hud').style.display = name === null ? 'block' : 'none';
   };
 
   G.hud = hud;
   return hud;
+}
+
+// What E does right now, as a prompt line.
+function currentPrompt(G) {
+  const p = G.player;
+  const m = G.mission;
+  if (G.state !== 'playing' || p.health <= 0) return '';
+  let prompt = '';
+  if (p.inCar) {
+    prompt = '[E] Get out    [SPACE] Handbrake';
+  } else {
+    const near = nearestParkedCar(G);
+    if (near) {
+      prompt = '[E] Steal car';
+    } else if (
+      m.index === 4 &&
+      m.stage === 0 &&
+      m.target &&
+      Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) < 6
+    ) {
+      prompt = 'Hold [E] to grab the cash';
+    }
+  }
+  if (p.hasPistol) prompt += '    [Q] Switch weapon    [Click] Shoot';
+  else if (!p.inCar) prompt += '    [Q] Fists    [Click] Punch';
+  return prompt;
 }
 
 // Per-frame HUD refresh: health, cash, objective distance, speed, prompts.
@@ -124,28 +154,11 @@ export function updateHud(G, dt) {
   const speedKmh = p.inCar && p.car ? Math.abs(p.car.speed) * 3.6 : p.speed * 3.6;
   hud.setSpeed(speedKmh);
   const m = G.mission;
-  let dist = null;
-  if (m.target) dist = Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z);
+  const dist = m.target ? Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) : null;
   hud.setObjective(m.objective, dist);
-
-  // Contextual prompt: what E does right now.
-  let prompt = '';
-  if (G.state === 'playing' && p.health > 0) {
-    if (p.inCar) {
-      prompt = '[E] Get out    [SPACE] Handbrake';
-    } else {
-      const near = nearestParkedCar(G);
-      if (near) prompt = '[E] Steal car';
-      else if (m.index === 4 && m.stage === 0 && m.target && Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) < 6) {
-        prompt = 'Hold [E] to grab the cash';
-      }
-    }
-    if (p.hasPistol) prompt += '    [Q] Switch weapon    [Click] Shoot';
-    else if (!p.inCar) prompt += '    [Q] Fists    [Click] Punch';
-  }
-  hud.setPrompt(prompt);
+  hud.setPrompt(currentPrompt(G));
   hud.tickToasts(dt);
   // Crosshair shows only on foot with the pistol out.
-  document.getElementById('crosshair').style.display =
+  grab('crosshair').style.display =
     G.state === 'playing' && !p.inCar && p.hasPistol && p.weapon === 'pistol' ? 'block' : 'none';
 }

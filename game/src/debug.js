@@ -1,8 +1,35 @@
-// debug.js — window.__solara hooks used ONLY by automated play-tests and the
-// screenshot run to stage scenes. They change nothing in normal play.
+// debug.js — window.__solara hooks used ONLY by automated play-tests and
+// the screenshot run to stage scenes. They change nothing in normal play:
+// every function here just calls the same code the buttons and keys call.
 
 import { setWanted } from './police.js';
 import { startMission } from './missions.js';
+
+// Round to one decimal place, for the snapshot's numeric fields.
+function round1(v) {
+  return Math.round(v * 10) / 10;
+}
+
+function nearestGap(list, p) {
+  if (!list.length) return null;
+  return round1(Math.min(...list.map((u) => Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z))));
+}
+
+// The moving parts of the snapshot: position, speed, counts, distances.
+function snapshotDynamic(G, p) {
+  return {
+    x: round1(p.pos.x),
+    z: round1(p.pos.z),
+    speedKmh: Math.round((p.inCar && p.car ? Math.abs(p.car.speed) : p.speed) * 3.6),
+    enemies: G.enemies.filter((e) => !e.dead).length,
+    policeCars: G.policeCars.length,
+    officers: G.officers.length,
+    wantedTimer: round1(G.wantedTimer ?? 0),
+    nearestPolice: nearestGap(G.policeCars, p),
+    nearestOfficer: nearestGap(G.officers, p),
+    elapsed: round1(G.elapsed ?? 0),
+  };
+}
 
 export function initDebug(G) {
   const api = {
@@ -17,23 +44,10 @@ export function initDebug(G) {
         cash: p.cash,
         health: p.health,
         wanted: G.wanted,
-        x: Math.round(p.pos.x * 10) / 10,
-        z: Math.round(p.pos.z * 10) / 10,
         inCar: p.inCar,
         weapon: p.weapon,
         hasPistol: p.hasPistol,
-        speedKmh: Math.round((p.inCar && p.car ? Math.abs(p.car.speed) : p.speed) * 3.6),
-        enemies: G.enemies.filter((e) => !e.dead).length,
-        policeCars: G.policeCars.length,
-        officers: G.officers.length,
-        wantedTimer: Math.round((G.wantedTimer ?? 0) * 10) / 10,
-        nearestPolice: G.policeCars.length
-          ? Math.round(Math.min(...G.policeCars.map((c) => Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z))) * 10) / 10
-          : null,
-        nearestOfficer: G.officers.length
-          ? Math.round(Math.min(...G.officers.map((o) => Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z))) * 10) / 10
-          : null,
-        elapsed: Math.round((G.elapsed ?? 0) * 10) / 10,
+        ...snapshotDynamic(G, p),
       };
     },
 
@@ -47,22 +61,23 @@ export function initDebug(G) {
     // Optional heading (radians) points the car / Marlo where you want.
     teleport(x, z, heading) {
       const p = G.player;
+      const hasHeading = heading !== undefined;
       if (p.inCar && p.car) {
         p.car.pos.x = x;
         p.car.pos.z = z;
-        if (heading !== undefined) {
+        if (hasHeading) {
           p.car.heading = heading;
           p.car.group.rotation.y = heading;
         }
       }
-      if (heading !== undefined) {
+      p.pos.x = x;
+      p.pos.z = z;
+      p.group.position.set(x, 0, z);
+      if (hasHeading) {
         p.yaw = heading;
         p.group.rotation.y = heading;
         G.camYaw = heading;
       }
-      p.pos.x = x;
-      p.pos.z = z;
-      p.group.position.set(x, 0, z);
       return api.state();
     },
 
@@ -102,18 +117,14 @@ export function initDebug(G) {
     // Face the nearest living enemy so the pistol raycast can hit it.
     faceNearestEnemy() {
       const p = G.player;
-      let best = null;
-      let bestD = Infinity;
-      for (const e of G.enemies) {
-        if (e.dead) continue;
-        const d = Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z);
-        if (d < bestD) {
-          bestD = d;
-          best = e;
-        }
-      }
-      if (!best) return api.state();
-      const yaw = Math.atan2(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+      const alive = G.enemies.filter((e) => !e.dead);
+      if (alive.length === 0) return api.state();
+      const mark = alive.reduce((best, e) => {
+        const gap = Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z);
+        const bestGap = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+        return gap < bestGap ? e : best;
+      });
+      const yaw = Math.atan2(mark.pos.x - p.pos.x, mark.pos.z - p.pos.z);
       p.yaw = yaw;
       p.group.rotation.y = yaw;
       // Point the camera at the enemy too.
