@@ -1,9 +1,11 @@
 // player.js — Marlo Vance on foot: WASD movement, sprint, and the
 // third-person camera. Driving lives in vehicles.js; this file only moves
-// Marlo while he is walking.
+// Marlo while he is walking. The camera shakes with the explosion
+// magnitude the effects system reports each frame.
 
 import { collideCircle } from './city.js';
 import { clamp as clampNum, turnToward } from './util.js';
+import { shakeOffset } from './effects.js';
 
 const WALK_SPEED = 6;
 const SPRINT_SPEED = 10;
@@ -135,7 +137,7 @@ function cameraRig(G, dt) {
 }
 
 // Third-person orbit camera. Drag the mouse to look; while driving it
-// trails behind the car so turns feel smooth.
+// trails behind the car so turns feel smooth. Explosions shake it.
 export function updateCamera(G, dt) {
   const THREE = window.THREE;
   const p = G.player;
@@ -153,6 +155,10 @@ export function updateCamera(G, dt) {
   const cz = target.z - Math.cos(yaw) * Math.cos(pitch) * dist;
   const cy = (target.y || 0) + 1.6 + Math.sin(pitch) * dist;
   const camPos = new THREE.Vector3(cx, Math.max(cy, 1.2), cz);
+  // Explosion shake: a random offset that decays with the shake magnitude.
+  const shake = shakeOffset(G);
+  camPos.x += shake.x;
+  camPos.y += shake.y;
   G.camera.position.lerp(camPos, Math.min(1, dt * 10));
   G.camera.lookAt(target.x, (target.y || 0) + 1.6, target.z);
 }

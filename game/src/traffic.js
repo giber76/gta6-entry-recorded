@@ -1,14 +1,17 @@
 // traffic.js — AI cars cruising the road grid. They turn at intersections,
 // brake for the player's car ahead of them, and wrap around the city edge
 // so the streets never empty out. Spawns are seeded; turns and wrap-arounds
-// roll plain Math.random.
+// roll plain Math.random. A wrecked traffic car is towed and respawns
+// after 8 s, so the streets stay busy even after a pile-up.
 
 import { ROADS } from './city.js';
 import { makeRng } from './util.js';
-import { createCar } from './vehicles.js';
+import { createCar, damageCar } from './vehicles.js';
+import { carExhaust } from './effects.js';
 
 const CARS_ON_ROAD = 10;
 const PAINT_JOBS = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f, 0x8e44ad, 0x95a5a6, 0xe67e22, 0xd5dbdb];
+const WRECK_RESPAWN_SECONDS = 8;
 
 // Pick a starting spot on the grid: a road, a lane offset, a direction.
 function dealStart(dice) {
@@ -44,6 +47,26 @@ export function spawnTraffic(G) {
     G.trafficCars.push(ride);
   }
   return G.trafficCars;
+}
+
+// A wrecked car is towed away and a fresh one joins the grid after 8 s.
+function respawnRide(G, ride) {
+  const spot = dealStart(makeRng((Math.random() * 1e9) | 0));
+  ride.pos.x = spot.x;
+  ride.pos.z = spot.z;
+  ride.heading = spot.bearing;
+  ride.group.rotation.y = spot.bearing;
+  ride.health = 100;
+  ride.wrecked = false;
+  ride.wreckTimer = 0;
+  ride.speed = 0;
+  ride.traffic = {
+    axis: spot.along,
+    dir: spot.sense,
+    lane: spot.offset,
+    speed: 8 + Math.random() * 4,
+    cruise: 8 + Math.random() * 4,
+  };
 }
 
 function closestCrossing(where) {
@@ -120,6 +143,12 @@ function wrapAround(ride) {
 
 export function updateTraffic(G, dt) {
   for (const ride of G.trafficCars) {
+    // Wrecked: count down to the tow truck, then rejoin the grid fresh.
+    if (ride.wrecked) {
+      ride.wreckTimer -= dt;
+      if (ride.wreckTimer <= 0) respawnRide(G, ride);
+      continue;
+    }
     const brain = ride.traffic;
     const goal = wantedSpeed(G, ride);
     brain.speed += (goal - brain.speed) * Math.min(1, dt * 2.5);
@@ -130,5 +159,10 @@ export function updateTraffic(G, dt) {
     ride.group.rotation.y = ride.heading;
     const spin = brain.speed * dt * 2.6;
     for (const w of ride.wheels) w.rotation.x += spin;
+    // A hurt traffic car smokes, and a burning one keeps losing health.
+    if (ride.health < 50 && ride.health > 0) {
+      carExhaust(G, ride, dt);
+      if (ride.health < 25) damageCar(G, ride, 2 * dt);
+    }
   }
 }

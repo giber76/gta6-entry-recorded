@@ -1,6 +1,7 @@
 // serve.ts — a tiny static file server for local play-testing of Solara Bay.
-// Serves the game/ folder at the root on port 8080. Dev convenience only;
-// the entry itself is static files and makes no network requests.
+// Serves the game/ folder at the root on port 8080 (or PORT, or the first
+// command-line argument). Dev convenience only; the entry itself is
+// static files and makes no network requests.
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -8,7 +9,7 @@ import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const docRoot = join(fileURLToPath(new URL('.', import.meta.url)), 'game');
-const listenPort = Number(process.env.PORT ?? 8080);
+const listenPort = Number(process.env.PORT ?? process.argv[2] ?? 8080);
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',

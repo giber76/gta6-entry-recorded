@@ -1,6 +1,7 @@
 // pedestrians.js — sidewalk walkers who stroll the city and scatter from
 // speeding cars and gunshots. A walker hit by a fast car is knocked down,
-// and that draws the law.
+// and that draws the law. An explosion sends every walker nearby running,
+// and knocks flat anyone standing too close to the blast.
 
 import { ROADS } from './city.js';
 import { makeRng, clamp } from './util.js';
@@ -75,6 +76,19 @@ export function scatterPeds(G, x, z, radius) {
       walker.flee = 3;
       walker.fleeX = dx / d;
       walker.fleeZ = dz / d;
+    }
+  }
+}
+
+// An explosion nearby: walkers flee hard, and anyone standing within
+// six units of the blast is knocked flat by it.
+export function fleeFromBlast(G, x, z) {
+  scatterPeds(G, x, z, 35);
+  for (const walker of G.peds) {
+    const d = Math.hypot(walker.pos.x - x, walker.pos.z - z);
+    if (d < 6 && walker.down <= 0) {
+      walker.down = 3;
+      walker.group.rotation.x = -Math.PI / 2;
     }
   }
 }

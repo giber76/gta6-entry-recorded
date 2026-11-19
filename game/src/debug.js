@@ -27,6 +27,7 @@ function snapshotDynamic(G, p) {
     wantedTimer: round1(G.wantedTimer ?? 0),
     nearestPolice: nearestGap(G.policeCars, p),
     nearestOfficer: nearestGap(G.officers, p),
+    carHealth: p.inCar && p.car ? Math.round(p.car.health) : null,
     elapsed: round1(G.elapsed ?? 0),
   };
 }
@@ -94,7 +95,7 @@ export function initDebug(G) {
     },
 
     setMission(i) {
-      if (i >= 0 && i < 5) startMission(G, i);
+      if (i >= 0 && i < 6) startMission(G, i);
       return api.state();
     },
 
@@ -128,6 +129,30 @@ export function initDebug(G) {
       p.yaw = yaw;
       p.group.rotation.y = yaw;
       // Point the camera at the enemy too.
+      G.camYaw = yaw;
+      return api.state();
+    },
+
+    // Point the camera at the nearest parked or traffic car, so a
+    // drive-by shot has something to hit. Traffic can nudge the car,
+    // so re-aim before every shot.
+    aimAtNearestCar() {
+      const p = G.player;
+      const cars = [...(G.parkedCars || []), ...(G.trafficCars || [])];
+      let best = null;
+      let bestD = Infinity;
+      for (const car of cars) {
+        if (car.wrecked || car.dead) continue;
+        const d = Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z);
+        if (d < bestD) {
+          bestD = d;
+          best = car;
+        }
+      }
+      if (!best) return api.state();
+      const yaw = Math.atan2(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+      p.yaw = yaw;
+      p.group.rotation.y = yaw;
       G.camYaw = yaw;
       return api.state();
     },

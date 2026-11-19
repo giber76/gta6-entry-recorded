@@ -29,7 +29,7 @@
     border-radius: 8px; padding: 8px 12px;
   }
 
-  /* Top-left cluster: health bar, cash, wanted stars. */
+  /* Top-left cluster: health bar, car health bar, cash, wanted stars. */
   #top-left { position: absolute; top: 14px; left: 14px; min-width: 240px; }
   #health-row {
     display: flex; justify-content: space-between;
@@ -40,6 +40,12 @@
     background: rgba(255,255,255,0.18); border-radius: 6px; overflow: hidden;
   }
   #health-fill { height: 100%; width: 100%; background: #37c978; transition: width 0.2s; }
+  #car-health-bar {
+    width: 200px; height: 8px; margin-top: 5px; display: none;
+    background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden;
+  }
+  #car-health-fill { height: 100%; width: 100%; background: #37c978; transition: width 0.2s; }
+  #car-health-label { font-size: 11px; color: #9aa4ae; margin-top: 2px; }
   #cash-text { font-size: 20px; font-weight: bold; color: #7ee787; margin-top: 4px; }
   #stars { font-size: 22px; letter-spacing: 3px; color: #5a636e; margin-top: 2px; }
   #stars.hot { color: #ffd23c; text-shadow: 0 0 8px rgba(255, 210, 60, 0.7); }
@@ -54,9 +60,10 @@
     border: 2px solid rgba(255,255,255,0.25); border-radius: 6px; background: #22262c;
   }
 
-  /* Bottom-left: weapon and speed. */
+  /* Bottom-left: weapon, radio and speed. */
   #bottom-left { position: absolute; bottom: 16px; left: 14px; font-size: 14px; }
   #weapon { font-weight: bold; color: #ffd23c; }
+  #radio { font-size: 13px; color: #9fd8e8; margin-top: 2px; }
   #speed { font-size: 22px; font-weight: bold; margin-top: 2px; }
 
   /* Centre overlays: prompt, dialogue, toasts, crosshair. */
@@ -124,12 +131,14 @@
   <div id="top-left" class="hud-panel">
     <div id="health-row"><span>HEALTH</span><span id="health-text">100</span></div>
     <div id="health-bar"><div id="health-fill"></div></div>
+    <div id="car-health-bar"><div id="car-health-fill"></div></div>
+    <div id="car-health-label" style="display:none">CAR</div>
     <div id="cash-text">$0</div>
     <div id="stars">☆☆☆☆☆</div>
   </div>
   <div id="top-right">
     <div class="hud-panel">
-      <div id="mission-name">Mission 1/5</div>
+      <div id="mission-name">Mission 1/6</div>
       <div id="objective-text"></div>
       <div id="objective-dist"></div>
     </div>
@@ -137,6 +146,7 @@
   </div>
   <div id="bottom-left" class="hud-panel">
     <div id="weapon">FISTS [Q]</div>
+    <div id="radio"></div>
     <div id="speed"></div>
   </div>
   <div id="prompt"></div>
@@ -148,13 +158,14 @@
 <div id="screen-start" class="screen">
   <h1 id="start-title">SOLARA BAY</h1>
   <p>An open-world crime game. You are Marlo Vance, driver-for-hire in a sun-soaked
-     coastal city. Five jobs for your fixer Rico Salas — steal, run, deliver, settle, score.</p>
-  <p class="sub" id="start-sub">Five jobs. One city. No rules but Rico&rsquo;s.</p>
+     coastal city. Six jobs for your fixer Rico Salas — steal, run, deliver, settle, score, and one last job.</p>
+  <p class="sub" id="start-sub">Six jobs. One city. No rules but Rico&rsquo;s.</p>
   <button id="btn-new">NEW GAME</button>
   <button id="btn-continue" class="secondary" style="display:none">CONTINUE</button>
   <div class="controls">
     <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>E</b> enter / steal car &nbsp;·&nbsp; <b>SPACE</b> handbrake<br>
-    <b>Q</b> switch weapon &nbsp;·&nbsp; <b>Click</b> punch / shoot &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>M</b> mission
+    <b>Q</b> switch weapon &nbsp;·&nbsp; <b>Click</b> punch / shoot &nbsp;·&nbsp; <b>R</b> radio &nbsp;·&nbsp; <b>Z/X</b> minimap zoom<br>
+    <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>M</b> mission
   </div>
 </div>
 

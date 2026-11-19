@@ -6,6 +6,10 @@
 // The RNG call order is part of the layout: buildings first (row-major,
 // plaza block skipped), then the two towers, then the beach palm spots,
 // then one lean per palm. Reorder nothing that draws from the RNG.
+//
+// The ground plane stops at the beach (x = 150): the ocean and the sand
+// east of it are their own planes, so the city base can never paint
+// over the sea.
 
 import { makeRng, makeFacadeTexture, makeRoadTexture, clamp } from './util.js';
 
@@ -25,6 +29,7 @@ export const LOCATIONS = {
   bank: { x: -40, z: -80, name: 'Meridian Bank' },
   safehouse: { x: 140, z: 80, name: 'Boardwalk Safehouse' },
   start: { x: 12, z: 30, name: 'Plaza steps' },
+  bossCoupe: { x: 128, z: 48, name: 'Boss coupe' },
 };
 
 // Make a mesh, put it where it belongs, set its shadow flags, add it.
@@ -50,7 +55,10 @@ function flat(THREE, scene, w, d, color, x, y, z) {
 }
 
 function layGround(THREE, scene) {
-  flat(THREE, scene, 460, 460, 0x6f7a58, 0, 0, 0);
+  // The city base runs from the west edge to the beach at x = 150. East
+  // of that line the sand and the ocean are their own planes, laid by
+  // layWater — the base never reaches under the sea.
+  flat(THREE, scene, 380, 460, 0x6f7a58, -40, 0, 0);
 }
 
 function layWater(THREE, scene) {

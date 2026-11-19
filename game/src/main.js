@@ -8,16 +8,18 @@ import { spawnTraffic, updateTraffic } from './traffic.js';
 import { spawnPedestrians, updatePedestrians } from './pedestrians.js';
 import { initPolice, updatePolice, raiseWanted, theftWitnessed } from './police.js';
 import { initCombat, updateEnemies, playerAttack } from './combat.js';
-import { initMissions, updateMissions, advanceDialogue, startMission } from './missions.js';
+import { MISSIONS, initMissions, updateMissions, advanceDialogue, startMission } from './missions.js';
 import { createHud, updateHud } from './hud.js';
 import { createMinimap } from './minimap.js';
 import { createAudio } from './audio.js';
 import { initInput } from './input.js';
+import { initEffects, updateEffects } from './effects.js';
 import { saveGame, loadSave, hasSave, clearSave } from './save.js';
 import { initDebug } from './debug.js';
 
 const THREE = window.THREE;
-const MISSION_NAMES = ['Wheels for Rico', 'Lose the Heat', 'The Package', 'Viper Nest', 'The Big Score'];
+const MISSION_NAMES = ['Wheels for Rico', 'Lose the Heat', 'The Package', 'Viper Nest', 'The Big Score', 'The Last Job'];
+const ZOOM_LEVELS = [1, 2, 4];
 
 const G = {
   state: 'menu',
@@ -25,6 +27,7 @@ const G = {
   camYaw: Math.PI,
   camPitch: 0.32,
   saveTimer: 0,
+  minimapZoom: 1,
 };
 
 // --- renderer / scene -------------------------------------------------------
@@ -55,6 +58,7 @@ G.camera = camera;
 G.audio = createAudio();
 initInput(G);
 initCity(G);
+initEffects(G);
 createPlayer(G);
 spawnParkedCars(G);
 spawnTraffic(G);
@@ -70,6 +74,7 @@ G.saveGame = () => saveGame(G);
 
 // --- game events ------------------------------------------------------------
 // ENTER advances dialogue; P/ESC pauses; M shows the mission; Q swaps weapon.
+// R cycles the radio station; Z/X zoom the minimap in and out.
 G.onEnter = () => {
   if (G.state === 'playing') advanceDialogue(G);
 };
@@ -86,7 +91,7 @@ G.onPauseKey = () => {
 G.onMissionKey = () => {
   if (G.state !== 'playing') return;
   const m = G.mission;
-  G.hud.toast(`Mission ${m.index + 1}/5: ${MISSION_NAMES[m.index]} — ${m.objective}`);
+  G.hud.toast(`Mission ${m.index + 1}/${MISSIONS.length}: ${MISSION_NAMES[m.index]} — ${m.objective}`);
 };
 
 G.onWeaponKey = () => {
@@ -97,6 +102,26 @@ G.onWeaponKey = () => {
   }
   p.weapon = p.weapon === 'fists' ? 'pistol' : 'fists';
   G.hud.toast(p.weapon === 'pistol' ? 'Pistol out' : 'Fists out');
+};
+
+G.onRadioKey = () => {
+  if (G.state !== 'playing' || !G.audio) return;
+  const name = G.audio.nextStation();
+  G.hud.toast(`Radio — ${name}`);
+};
+
+G.onZoomIn = () => {
+  if (G.state !== 'playing') return;
+  const i = ZOOM_LEVELS.indexOf(G.minimapZoom ?? 1);
+  G.minimapZoom = ZOOM_LEVELS[(i + 1) % ZOOM_LEVELS.length];
+  G.hud.toast(`Minimap ${G.minimapZoom}x`);
+};
+
+G.onZoomOut = () => {
+  if (G.state !== 'playing') return;
+  const i = ZOOM_LEVELS.indexOf(G.minimapZoom ?? 1);
+  G.minimapZoom = ZOOM_LEVELS[(i + ZOOM_LEVELS.length - 1) % ZOOM_LEVELS.length];
+  G.hud.toast(`Minimap ${G.minimapZoom}x`);
 };
 
 G.onClick = () => {
@@ -181,6 +206,7 @@ G.continueGame = () => {
   p.pos.x = data.x;
   p.pos.z = data.z;
   p.group.position.set(p.pos.x, 0, p.pos.z);
+  if (G.audio) G.audio.setStation(data.station ?? 0);
   initMissions(G);
   // Restore the saved mission directly (earlier jobs are already paid).
   if (data.mission > 0) startMission(G, data.mission);
@@ -206,8 +232,8 @@ function refreshStartScreen() {
   btn.style.display = hasSave() ? 'block' : 'none';
   const save = loadSave();
   document.getElementById('start-sub').textContent = save
-    ? `Continue — $${save.cash.toLocaleString('en-US')}, mission ${save.mission + 1}/5`
-    : 'Five jobs. One city. No rules but Rico\u2019s.';
+    ? `Continue — $${save.cash.toLocaleString('en-US')}, mission ${save.mission + 1}/${MISSIONS.length}`
+    : 'Six jobs. One city. No rules but Rico\u2019s.';
 }
 
 // --- menu buttons -----------------------------------------------------------
@@ -257,6 +283,7 @@ const PLAY_UPDATERS = [
   updatePolice,
   updateEnemies,
   updateMissions,
+  updateEffects,
   updateCamera,
   updateHud,
 ];
@@ -277,6 +304,7 @@ function tickIdle(dt) {
   // World idles behind the end screens.
   updateTraffic(G, dt);
   updatePedestrians(G, dt);
+  updateEffects(G, dt);
   updateCamera(G, dt);
 }
 

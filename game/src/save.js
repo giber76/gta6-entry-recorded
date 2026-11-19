@@ -1,8 +1,9 @@
 // save.js — localStorage save/load for Solara Bay.
 //
 // One key, one version. What is saved: cash, the mission Marlo is on,
-// his position, his health, and whether he has the pistol. Anything else
-// (wanted level, enemies, cars) is rebuilt fresh on load.
+// his position, his health, whether he has the pistol, and which radio
+// station he was listening to. Anything else (wanted level, enemies,
+// cars) is rebuilt fresh on load.
 
 const SAVE_KEY = 'solara-bay-save-v1';
 const SAVE_VERSION = 1;
@@ -34,6 +35,7 @@ export function saveGame(G) {
     z: p.pos.z,
     health: p.health,
     hasPistol: p.hasPistol,
+    station: G.audio ? G.audio.stationIndex() : 0,
     savedAt: Date.now(),
   };
   return writeStorage(JSON.stringify(data));

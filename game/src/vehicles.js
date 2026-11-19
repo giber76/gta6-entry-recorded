@@ -3,9 +3,16 @@
 // Accelerate, brake, reverse and handbrake; buildings push the car out;
 // bumps with traffic slow both cars. Stealing a parked car only draws the
 // law if someone sees it (police.js decides that).
+//
+// Cars have health (100). Building hits, traffic bumps and police rams
+// all deal damage; a hurt car smokes below half health and burns below a
+// quarter, and a wrecked car explodes, throws its driver clear and stays
+// out of action until it is towed or respawns.
 
 import { clamp } from './util.js';
 import { collideCircle } from './city.js';
+import { explodeCar, carExhaust, spawnSkidSmoke } from './effects.js';
+import { damagePlayer } from './player.js';
 
 const PAINT_POOL = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f, 0x8e44ad, 0x95a5a6, 0xe67e22, 0x16a085];
 const PARKED_SPOTS = [
@@ -15,6 +22,9 @@ const PARKED_SPOTS = [
   { x: -86, z: 84, heading: Math.PI, color: 0x8e44ad },
   { x: 44, z: 124, heading: -Math.PI / 2, color: 0xf1c40f },
 ];
+const BURN_DAMAGE_PER_SECOND = 2;
+const SMOKE_HEALTH = 50;
+const BURN_HEALTH = 25;
 
 // Body parts as [geometry, material, x, y, z, castShadow?] — one loop
 // builds the shell, cabin and roof instead of three copy-pasted blocks.
@@ -107,6 +117,13 @@ export function createCar(G, opts) {
     isPlayer: false,
     parked: !!opts.parked,
     dead: false,
+    // Damage state: 100 health, wrecked at zero, out of action 8 s.
+    health: 100,
+    maxHealth: 100,
+    wrecked: false,
+    wreckTimer: 0,
+    smokeTimer: 0,
+    skidTimer: 0,
   };
   // Driving model: police cars are a little faster than civilian ones.
   car.topSpeed = opts.police ? 42 : 38;
@@ -115,7 +132,32 @@ export function createCar(G, opts) {
   car.length = 4.4;
   car.width = 2.0;
   car.pos = group.position;
+  // The raycast in combat.js walks up from a hit mesh to find this car.
+  group.userData.car = car;
   return car;
+}
+
+// Hurt a car. At zero health the car wrecks: it explodes, throws its
+// driver clear and stays a burnt-out shell until it is towed or respawns.
+export function damageCar(G, car, amount) {
+  if (!car || car.wrecked || car.dead || amount <= 0) return;
+  car.health -= amount;
+  if (car.health > 0) return;
+  car.health = 0;
+  wreckCar(G, car);
+}
+
+export function wreckCar(G, car) {
+  car.wrecked = true;
+  car.wreckTimer = 8;
+  car.speed = 0;
+  explodeCar(G, car.pos.x, car.pos.z);
+  if (car.isPlayer) {
+    // Marlo is thrown clear of the wreck, on foot and hurt.
+    stepOut(G);
+    damagePlayer(G, 10, 'car explosion');
+  }
+  if (G.audio) G.audio.crash();
 }
 
 // Parked cars Marlo can steal, including the orange mission coupe by the plaza.
@@ -138,9 +180,11 @@ function pushOutOfBuildings(G, car) {
   return true;
 }
 
-// Bump into traffic cars: both are pushed apart and slow down.
+// Bump into traffic cars: both are pushed apart and slow down, and a
+// hard bump damages both cars.
 function bumpTraffic(G, car) {
   for (const t of G.trafficCars || []) {
+    if (t.wrecked) continue;
     const dx = car.pos.x - t.pos.x;
     const dz = car.pos.z - t.pos.z;
     const gap = Math.hypot(dx, dz);
@@ -152,6 +196,8 @@ function bumpTraffic(G, car) {
     t.pos.z -= dz * shove * 0.5;
     if (Math.abs(car.speed) > 8) {
       car.speed *= 0.7;
+      damageCar(G, car, 6);
+      damageCar(G, t, 6);
       if (G.audio) G.audio.crash();
     }
   }
@@ -194,20 +240,45 @@ function applySteering(car, input, dt) {
   car.heading += turnRate * dt * (input.handbrake ? 1.5 : 1);
 }
 
+// A hurt car smokes, and a burning car keeps losing health until it
+// wrecks. Tyre smoke puffs from the rear wheels on a hard handbrake.
+function updateCarDamage(G, car, input, dt) {
+  if (car.health < SMOKE_HEALTH && car.health > 0) {
+    carExhaust(G, car, dt);
+    if (car.health < BURN_HEALTH) damageCar(G, car, BURN_DAMAGE_PER_SECOND * dt);
+  }
+  car.skidTimer -= dt;
+  if (input.handbrake && Math.abs(car.speed) > 10 && car.skidTimer <= 0) {
+    car.skidTimer = 0.08;
+    const bx = car.pos.x - Math.sin(car.heading) * 1.5;
+    const bz = car.pos.z - Math.cos(car.heading) * 1.5;
+    spawnSkidSmoke(G, bx, bz);
+  }
+}
+
 export function updatePlayerCar(G, dt) {
   const p = G.player;
   const car = p.car;
   if (!p.inCar || !car) return;
+  if (car.wrecked) return;
+  // The pistol cooldown ticks while driving, so a drive-by can fire
+  // more than once.
+  p.shootCooldown = Math.max(0, p.shootCooldown - dt);
   const input = readDriveInput(G);
   applyDriveForces(car, input, dt);
   applySteering(car, input, dt);
   car.pos.x += Math.sin(car.heading) * car.speed * dt;
   car.pos.z += Math.cos(car.heading) * car.speed * dt;
   if (pushOutOfBuildings(G, car)) {
-    if (Math.abs(car.speed) > 6 && G.audio) G.audio.crash();
+    if (Math.abs(car.speed) > 6) {
+      damageCar(G, car, Math.abs(car.speed) * 0.5);
+      if (G.audio) G.audio.crash();
+    }
     car.speed *= 0.45;
   }
   bumpTraffic(G, car);
+  updateCarDamage(G, car, input, dt);
+  if (car.wrecked) return;
   car.group.rotation.y = car.heading;
   const spin = car.speed * dt * 2.6;
   for (const w of car.wheels) w.rotation.x += spin;
@@ -243,7 +314,7 @@ function nearestStealable(G) {
   let best = null;
   let bestD = 4.5;
   for (const car of G.parkedCars || []) {
-    if (car.dead) continue;
+    if (car.dead || car.wrecked) continue;
     const gap = Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z);
     if (gap < bestD) {
       bestD = gap;

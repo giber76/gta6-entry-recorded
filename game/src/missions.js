@@ -1,10 +1,12 @@
-// missions.js — the five-job story chain for Marlo Vance and his fixer
+// missions.js — the six-job story chain for Marlo Vance and his fixer
 // Rico Salas. A beacon marks the current objective; dialogue advances on
 // ENTER or after 8 s. Each mission owns a setup and a completion rule.
+// Six jobs, $12,000 in total.
 
 import { LOCATIONS } from './city.js';
 import { setWanted } from './police.js';
 import { spawnEnemy, livingEnemies } from './combat.js';
+import { createCar } from './vehicles.js';
 
 function job(name, reward, ...brief) {
   return { name, reward, brief };
@@ -35,6 +37,11 @@ export const MISSIONS = [
     'The Big Score', 3000,
     'RICO: Meridian Bank. In, grab the cash, out. Four seconds at the vault, no more.',
     'RICO: The whole bay will come down on you. Lose them at the boardwalk safehouse.'
+  ),
+  job(
+    'The Last Job', 5000,
+    'RICO: One more, Marlo. The Viper boss keeps his black coupe on Marina East.',
+    'RICO: Two guards on it. Take the coupe and bring it home. That is twelve grand total, Marlo.'
   ),
 ];
 
@@ -117,6 +124,28 @@ function distTo(p, x, z) {
   return Math.hypot(p.pos.x - x, p.pos.z - z);
 }
 
+// The Viper boss's black coupe, parked on Marina East. A fresh one is
+// dealt whenever the current one is wrecked, so the job stays winnable.
+function spawnBossCoupe(G) {
+  const L = LOCATIONS;
+  if (G.bossCoupe) {
+    G.scene.remove(G.bossCoupe.group);
+    G.parkedCars = (G.parkedCars || []).filter((c) => c !== G.bossCoupe);
+  }
+  const coupe = createCar(G, {
+    x: L.bossCoupe.x,
+    z: L.bossCoupe.z,
+    heading: Math.PI / 2,
+    color: 0x0a0a0a,
+    parked: true,
+  });
+  coupe.mission = true;
+  coupe.bossCoupe = true;
+  G.bossCoupe = coupe;
+  G.parkedCars.push(coupe);
+  return coupe;
+}
+
 // --- per-mission setup -------------------------------------------------------
 const SETUPS = [
   // 1 — Wheels for Rico: steal the orange coupe by the plaza.
@@ -152,6 +181,17 @@ const SETUPS = [
     const L = LOCATIONS;
     aimBeacon(G, L.bank.x, L.bank.z, 'Get to Meridian Bank and hold E at the vault');
   },
+  // 6 — The Last Job: steal the boss's black coupe, two guards on it.
+  (G) => {
+    const L = LOCATIONS;
+    spawnBossCoupe(G);
+    const spots = [
+      [L.bossCoupe.x - 5, L.bossCoupe.z - 3],
+      [L.bossCoupe.x + 4, L.bossCoupe.z + 5],
+    ];
+    for (const [x, z] of spots) spawnEnemy(G, x, z, 5);
+    aimBeacon(G, L.bossCoupe.x, L.bossCoupe.z, 'Steal the Viper boss\u2019s black coupe on Marina East');
+  },
 ];
 
 export function startMission(G, index) {
@@ -176,6 +216,16 @@ export function completeMission(G) {
     G.hud.setCash(G.player.cash);
   }
   if (G.saveGame) G.saveGame();
+  // The Package ambush stands down when the job is done: the pier
+  // Vipers leave instead of hunting Marlo for the rest of the game.
+  if (G.mission.index === 2) {
+    for (const e of [...G.enemies]) {
+      if (e.missionTag === 2 && !e.dead) {
+        G.scene.remove(e.group);
+        G.enemies = G.enemies.filter((x) => x !== e);
+      }
+    }
+  }
   G.mission.done = true;
   const next = G.mission.index + 1;
   if (next >= MISSIONS.length) {
@@ -270,7 +320,29 @@ function ruleScore(G, dt) {
   return false;
 }
 
-const RULES = [ruleWheels, ruleHeat, rulePackage, ruleNest, ruleScore];
+// 6 — The Last Job. Stage 0: steal the boss's black coupe. Stage 1:
+// drive it to Rico's garage. A wrecked coupe is re-dealt, so the job
+// can always be finished.
+function ruleLastJob(G) {
+  const m = G.mission;
+  const p = G.player;
+  const L = LOCATIONS;
+  if (m.stage === 1) return distTo(p, L.garage.x, L.garage.z) < 9 && p.inCar;
+  if (G.bossCoupe && G.bossCoupe.wrecked) {
+    spawnBossCoupe(G);
+    if (G.hud) G.hud.toast('The boss coupe was wrecked — Rico got you another one');
+    aimBeacon(G, L.bossCoupe.x, L.bossCoupe.z, 'Steal the Viper boss\u2019s black coupe on Marina East');
+    return false;
+  }
+  if (p.inCar && p.car && p.car.bossCoupe) {
+    m.stage = 1;
+    aimBeacon(G, L.garage.x, L.garage.z, 'Drive the black coupe to Rico\u2019s Garage on Harbor Road');
+    showDialogue(G, ['RICO: That is the boss\u2019s own ride. Bring it home, Marlo.']);
+  }
+  return false;
+}
+
+const RULES = [ruleWheels, ruleHeat, rulePackage, ruleNest, ruleScore, ruleLastJob];
 
 function missionDone(G, dt) {
   return RULES[G.mission.index](G, dt);

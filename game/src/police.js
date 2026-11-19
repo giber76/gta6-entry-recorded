@@ -2,7 +2,10 @@
 //
 // Stars run 0–5. Police cars chase and ram; foot officers chase and punch,
 // but only while Marlo is on foot. Stars fall one per 10 s, and only while
-// no pursuer can see him.
+// no pursuer can see him. A ram damages the player's car as well as
+// Marlo, and the ramming police car takes a dent too. A wrecked police
+// car holds its roster slot for 8 s before it is towed away, so the
+// heat genuinely drops when Marlo wrecks his pursuers.
 //
 // Why "Lose the Heat" is winnable at all: a fleeing car is faster than any
 // police car (38 vs 30 at best), a ram costs health but never touches the
@@ -11,7 +14,7 @@
 // the heat never lets go.
 
 import { nearestRoadPoint, collideCircle } from './city.js';
-import { createCar } from './vehicles.js';
+import { createCar, damageCar } from './vehicles.js';
 import { damagePlayer } from './player.js';
 
 const TUNING = {
@@ -21,6 +24,8 @@ const TUNING = {
   spawnDistance: 95,
   spawnMinDistance: 80,
   ramDamage: 4,
+  ramCarDamage: 8,
+  ramSelfDamage: 4,
   ramCooldown: 3.0,
   ramRange: 3.4,
   officerPunchDamage: 6,
@@ -136,7 +141,8 @@ function anyoneSees(G) {
 }
 
 // Keep the roster at the wanted level: up to 3 cars, up to 2 officers.
-// Extra units leave when the heat drops.
+// Extra units leave when the heat drops. A wrecked car holds its slot
+// until it is towed, so wrecking a pursuer genuinely thins the chase.
 function syncRoster(G) {
   const wantCars = G.wanted > 0 ? Math.min(TUNING.maxCars, G.wanted) : 0;
   while (G.policeCars.length < wantCars) spawnPoliceCar(G);
@@ -172,13 +178,14 @@ function chaseSpeed(gap) {
 
 // Ram: contact hurts, but it never slows the player's car — that was the
 // pin that made losing the heat impossible. A rammed driver keeps their
-// speed and can still break away.
+// speed and can still break away. The ram dents both cars.
 function ramPlayer(G, car, gap, dt) {
   car.policeAI.ramCooldown -= dt;
   if (gap >= TUNING.ramRange || car.policeAI.ramCooldown > 0) return;
   car.policeAI.ramCooldown = TUNING.ramCooldown;
   const p = G.player;
   if (p.inCar && p.car) {
+    damageCar(G, p.car, TUNING.ramCarDamage);
     damagePlayer(G, TUNING.ramDamage, 'rammed by police');
   } else {
     damagePlayer(G, TUNING.officerPunchDamage, 'rammed by police');
@@ -186,10 +193,17 @@ function ramPlayer(G, car, gap, dt) {
     p.pos.x += ((p.pos.x - car.pos.x) / (gap || 1)) * shove;
     p.pos.z += ((p.pos.z - car.pos.z) / (gap || 1)) * shove;
   }
+  damageCar(G, car, TUNING.ramSelfDamage);
   if (G.audio) G.audio.crash();
 }
 
 function drivePoliceCar(G, car, dt) {
+  // A wrecked pursuer sits out for 8 s, then the tow truck takes it.
+  if (car.wrecked) {
+    car.wreckTimer -= dt;
+    if (car.wreckTimer <= 0) dropPoliceCar(G, car);
+    return;
+  }
   const p = G.player;
   const dx = p.pos.x - car.pos.x;
   const dz = p.pos.z - car.pos.z;

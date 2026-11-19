@@ -6,7 +6,7 @@
 
 An original open-world crime game in the spirit of GTA 6, built for the
 [make.fun](https://make.fun) gta6-01 bounty. You are Marlo Vance, a driver-for-hire
-in a sun-soaked fictional coastal city, working five jobs for your fixer Rico Salas.
+in a sun-soaked fictional coastal city, working six jobs for your fixer Rico Salas.
 
 ## What is in the game
 
@@ -14,16 +14,29 @@ in a sun-soaked fictional coastal city, working five jobs for your fixer Rico Sa
   ocean, palms, traffic and pedestrians — on foot or behind the wheel.
 - **Steal and drive**: arcade driving with a handbrake. Taking a car only draws
   the law if someone sees you do it.
+- **Car damage**: every car has 100 health. Building hits, traffic bumps and
+  police rams deal damage; a hurt car smokes below half health and burns below
+  a quarter, and a wrecked car explodes — fireball, smoke, sparks, camera
+  shake — and throws its driver clear. Wrecked police cars stay out for 8 s;
+  wrecked traffic respawns after 8 s.
+- **Drive-by shooting**: the pistol fires from the driver's seat, aimed along
+  the camera, and hits Vipers and car bodies alike. Vipers strafe in a
+  standoff and back off when Marlo closes in.
+- **Radio**: three stations — SOLARA FM, BAY 97.5, VICE 101 — on a 16-step
+  sequencer. R cycles stations; the HUD shows the current one.
+- **Minimap zoom**: 1x, 2x and 4x, centred on Marlo when zoomed in (Z/X).
 - **Wanted 0–5**: police cars chase and ram, foot officers chase and punch. Stay
   out of sight and the heat decays, one star at a time.
-- **Five jobs, $7,000**: steal the coupe, lose the heat, run a package through an
-  ambush, clear the Viper nest, then the Meridian Bank job.
+- **Six jobs, $12,000**: steal the coupe, lose the heat, run a package through an
+  ambush, clear the Viper nest, then the Meridian Bank job — and a sixth job,
+  The Last Job: steal the Viper boss's black coupe from Marina East.
 - **Combat**: fists and a pistol, muzzle flashes and tracers, Crimson Viper gang
   enemies who shoot back.
 - **HUD and minimap**: health, cash, wanted stars, objective with distance, speed,
-  dialogue and toasts. Progress saves to localStorage — continue where you left off.
+  the driven car's health, radio station, dialogue and toasts. Progress saves
+  to localStorage — continue where you left off.
 - **Sound**: everything is synthesised WebAudio — engine hum, sirens, gunshots,
-  pickups. No audio files, no network requests.
+  pickups, explosions, three radio stations. No audio files, no network requests.
 
 ## Controls
 
@@ -34,7 +47,9 @@ in a sun-soaked fictional coastal city, working five jobs for your fixer Rico Sa
 | E | Enter / steal a car, hold at the vault |
 | SPACE | Handbrake |
 | Q | Switch weapon (fists / pistol) |
-| Click | Punch / shoot |
+| Click | Punch / shoot (drive-by while driving) |
+| R | Cycle radio station |
+| Z / X | Minimap zoom in / out |
 | SHIFT | Sprint |
 | P | Pause |
 | M | Mission list |

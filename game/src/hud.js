@@ -1,5 +1,9 @@
 // hud.js — the Solara Bay HUD: health, cash, wanted stars, objective,
-// prompts, dialogue, toasts, speed and the menu / pause / busted / win screens.
+// prompts, dialogue, toasts, speed, the car's health while driving, the
+// radio station, and the menu / pause / busted / win screens.
+//
+// The damage vignette flashes red when Marlo takes a hit (player.js
+// sets G.hudFlash) and fades out over the next second.
 
 import { nearestParkedCar } from './vehicles.js';
 
@@ -21,6 +25,9 @@ export function createHud(G) {
   const hud = {
     healthFill: grab('health-fill'),
     healthText: grab('health-text'),
+    carHealthBar: grab('car-health-bar'),
+    carHealthFill: grab('car-health-fill'),
+    carHealthLabel: grab('car-health-label'),
     cashText: grab('cash-text'),
     starsEl: grab('stars'),
     objectiveText: grab('objective-text'),
@@ -31,6 +38,8 @@ export function createHud(G) {
     toastEl: grab('toasts'),
     speedEl: grab('speed'),
     weaponEl: grab('weapon'),
+    radioEl: grab('radio'),
+    flashEl: grab('damage-flash'),
     missionEl: grab('mission-name'),
     screens: {
       start: grab('screen-start'),
@@ -49,6 +58,20 @@ export function createHud(G) {
     hud.healthFill.style.width = `${pct}%`;
     hud.healthFill.style.background = healthColor(h);
     hud.healthText.textContent = `${Math.ceil(h)}`;
+  };
+
+  // The driven car's health, shown only while Marlo is behind the wheel.
+  hud.setCarHealth = function setCarHealth(h) {
+    if (h == null) {
+      hud.carHealthBar.style.display = 'none';
+      hud.carHealthLabel.style.display = 'none';
+      return;
+    }
+    hud.carHealthBar.style.display = 'block';
+    hud.carHealthLabel.style.display = 'block';
+    const pct = Math.max(0, Math.min(100, h));
+    hud.carHealthFill.style.width = `${pct}%`;
+    hud.carHealthFill.style.background = healthColor(h);
   };
 
   hud.setCash = function setCash(c) {
@@ -86,6 +109,10 @@ export function createHud(G) {
 
   hud.setWeapon = function setWeapon(w) {
     hud.weaponEl.textContent = w === 'pistol' ? 'PISTOL [Q]' : 'FISTS [Q]';
+  };
+
+  hud.setRadio = function setRadio(name) {
+    hud.radioEl.textContent = name ? `RADIO ${name} [R]` : '';
   };
 
   hud.toast = function toast(text) {
@@ -143,7 +170,8 @@ function currentPrompt(G) {
   return prompt;
 }
 
-// Per-frame HUD refresh: health, cash, objective distance, speed, prompts.
+// Per-frame HUD refresh: health, cash, objective distance, speed, prompts,
+// the driven car's health, the radio station and the damage vignette.
 export function updateHud(G, dt) {
   const hud = G.hud;
   const p = G.player;
@@ -153,6 +181,14 @@ export function updateHud(G, dt) {
   hud.setWeapon(p.hasPistol ? p.weapon : 'fists');
   const speedKmh = p.inCar && p.car ? Math.abs(p.car.speed) * 3.6 : p.speed * 3.6;
   hud.setSpeed(speedKmh);
+  if (p.inCar && p.car) hud.setCarHealth(p.car.health);
+  else hud.setCarHealth(null);
+  hud.setRadio(G.audio ? G.audio.stationName() : '');
+  // The damage vignette: flashes red on a hit, then fades out.
+  if (hud.flashEl) {
+    hud.flashEl.style.opacity = String(Math.max(0, G.hudFlash ?? 0));
+    G.hudFlash = Math.max(0, (G.hudFlash ?? 0) - dt * 1.4);
+  }
   const m = G.mission;
   const dist = m.target ? Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) : null;
   hud.setObjective(m.objective, dist);

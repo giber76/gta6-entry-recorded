@@ -1,6 +1,11 @@
 // minimap.js — a north-up 2D top-down map of Solara Bay: roads, the ocean,
 // the player arrow, cars, police, enemies and the mission marker.
 // Drawn fresh every frame onto the 180×180 HUD canvas.
+//
+// Zoom: 1x shows the whole city; 2x and 4x centre on Marlo and show a
+// smaller patch (Z zooms in, X zooms out). The ground is painted in
+// world-space rects, and the city base stops at the beach — it never
+// paints over the sea.
 
 const BLOCKS = [-100, -60, -20, 20, 60, 100];
 
@@ -11,14 +16,34 @@ export function createMinimap(G) {
   const H = canvas.height;
   const SCALE = W / 380; // city spans about -190..190 in both axes
 
+  // World-to-map: at zoom 1 the whole city fits; zoomed in, the view
+  // centres on Marlo and shows a smaller patch of the city.
+  function viewCenter() {
+    const zoom = G.minimapZoom ?? 1;
+    if (zoom <= 1) return [0, 0];
+    const p = G.player;
+    return [p.pos.x, p.pos.z];
+  }
+
   function toMap(x, z) {
-    return [W / 2 + x * SCALE, H / 2 + z * SCALE];
+    const zoom = G.minimapZoom ?? 1;
+    const [cx, cz] = viewCenter();
+    const s = SCALE * zoom;
+    return [W / 2 + (x - cx) * s, H / 2 + (z - cz) * s];
+  }
+
+  // A world-space rectangle, clipped to the canvas by the fill itself.
+  function rectWorld(x0, z0, x1, z1, color) {
+    const [ax, az] = toMap(x0, z0);
+    const [bx, bz] = toMap(x1, z1);
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.min(ax, bx), Math.min(az, bz), Math.abs(bx - ax), Math.abs(bz - az));
   }
 
   function fillBlock(bx, bz, w, color) {
     const [mx, mz] = toMap(bx, bz);
     ctx.fillStyle = color;
-    ctx.fillRect(mx, mz, w * SCALE, w * SCALE);
+    ctx.fillRect(mx, mz, w * SCALE * (G.minimapZoom ?? 1), w * SCALE * (G.minimapZoom ?? 1));
   }
 
   function dot(x, z, r, color) {
@@ -36,13 +61,11 @@ export function createMinimap(G) {
   }
 
   function drawGround() {
-    // Sea and sand on the east edge, then the city base and its blocks.
-    ctx.fillStyle = '#1e6f9e';
-    ctx.fillRect(W / 2 + 140 * SCALE, 0, W, H);
-    ctx.fillStyle = '#d9c08a';
-    ctx.fillRect(W / 2 + 140 * SCALE - 22 * SCALE, 0, 22 * SCALE, H);
-    ctx.fillStyle = '#3a3f46';
-    ctx.fillRect(0, 0, W, H);
+    // The city base stops at the beach (x = 140); the sea and the sand
+    // east of it are painted after it, so the base can never cover them.
+    rectWorld(-190, -190, 140, 190, '#3a3f46');
+    rectWorld(160, -190, 440, 190, '#1e6f9e');
+    rectWorld(140, -190, 162, 190, '#d9c08a');
     for (const bx of BLOCKS) {
       for (const bz of BLOCKS) {
         if (bx === 20 && bz === 20) continue; // plaza, painted separately
@@ -54,7 +77,7 @@ export function createMinimap(G) {
 
   function drawRoads() {
     ctx.strokeStyle = '#8a8f98';
-    ctx.lineWidth = 10 * SCALE;
+    ctx.lineWidth = 10 * SCALE * (G.minimapZoom ?? 1);
     for (const r of G.city.roads) {
       const [, ay] = toMap(0, r);
       ctx.beginPath();
@@ -136,6 +159,11 @@ export function createMinimap(G) {
     drawCars();
     drawHostiles();
     drawPlayerArrow();
+    // Zoom level, bottom-left of the map.
+    const zoom = G.minimapZoom ?? 1;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(`${zoom}x`, 6, H - 6);
   }
 
   return { draw };
