@@ -257,10 +257,10 @@ function buildPalm(THREE, dice, x, z) {
   return group;
 }
 
-export function initCity(G) {
+export function initCity(game) {
   const THREE = window.THREE;
   const dice = makeRng(20261117);
-  const scene = G.scene;
+  const scene = game.scene;
   const walls = [];
 
   scene.background = new THREE.Color(0x87b5d6);
@@ -280,7 +280,7 @@ export function initCity(G) {
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.6;
   scene.add(sun);
-  G.sun = sun;
+  game.sun = sun;
 
   buildGround(THREE, scene);
   buildSea(THREE, scene);
@@ -320,8 +320,8 @@ export function initCity(G) {
 
   buildLamps(THREE, scene);
 
-  G.city = { colliders: walls, roads: ROADS, bound: CITY_BOUND, locations: LOCATIONS };
-  return G.city;
+  game.city = { colliders: walls, roads: ROADS, bound: CITY_BOUND, locations: LOCATIONS };
+  return game.city;
 }
 
 // Shove a circle out of one wall box. Returns the fixed position and
@@ -358,15 +358,15 @@ function pushOutOfBox(x, z, radius, box) {
 
 // Shove a circle (x, z, radius) out of every building and the city edge.
 // Returns the corrected position plus whether anything was hit.
-export function collideCircle(G, x, z, radius) {
+export function collideCircle(game, x, z, radius) {
   let hit = false;
-  for (const wall of G.city.colliders) {
+  for (const wall of game.city.colliders) {
     const fixed = pushOutOfBox(x, z, radius, wall);
     x = fixed.x;
     z = fixed.z;
     hit = hit || fixed.hit;
   }
-  const edge = G.city.bound;
+  const edge = game.city.bound;
   if (x < -edge) { x = -edge; hit = true; }
   if (x > edge) { x = edge; hit = true; }
   if (z < -edge) { z = -edge; hit = true; }

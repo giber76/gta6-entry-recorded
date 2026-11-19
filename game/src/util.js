@@ -6,7 +6,7 @@
 // below are for effects and other unseeded rolls.
 
 // One mixing step of the mulberry32 generator.
-function mixStep(s) {
+function mixOnce(s) {
   const t = Math.imul(s ^ (s >>> 15), 1 | s);
   return (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
 }
@@ -15,7 +15,7 @@ export function mulberry32(seed) {
   let s = seed >>> 0;
   return function roll() {
     s = (s + 0x6d2b79f5) | 0;
-    const mixed = mixStep(s);
+    const mixed = mixOnce(s);
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
   };
 }
@@ -25,7 +25,7 @@ export function mulberry32(seed) {
 // every load while each system still gets its own stream.
 export function makeRng(seed) {
   const roll = mulberry32(seed);
-  const bag = {
+  return {
     next: roll,
     range(lo, hi) {
       return lo + roll() * (hi - lo);
@@ -40,7 +40,6 @@ export function makeRng(seed) {
       return roll() < p;
     },
   };
-  return bag;
 }
 
 // Plain Math.random helpers for effects and other unseeded rolls —
@@ -98,17 +97,22 @@ export function makeCanvasTexture(THREE, width, height, draw) {
   return tex;
 }
 
-// The window grid of a building face: one lit-or-dark pane per cell,
-// plus a pale highlight along each pane's top edge.
+// One window pane: a lit-or-dark cell plus a pale highlight along its
+// top edge.
+function paintPane(ctx, rng, x, y, w, h) {
+  ctx.fillStyle = rng.chance(0.28) ? '#ffd98a' : '#1d2733';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(x, y, w, 2);
+}
+
+// The window grid of a building face: one lit-or-dark pane per cell.
 function paintWindows(ctx, rng, margin, cellW, cellH, floors, cols) {
   for (let floor = 0; floor < floors; floor++) {
     for (let col = 0; col < cols; col++) {
       const x = margin + col * cellW + 3;
       const y = 8 + floor * cellH + 4;
-      ctx.fillStyle = rng.chance(0.28) ? '#ffd98a' : '#1d2733';
-      ctx.fillRect(x, y, cellW - 6, cellH - 8);
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(x, y, cellW - 6, 2);
+      paintPane(ctx, rng, x, y, cellW - 6, cellH - 8);
     }
   }
 }
@@ -122,18 +126,22 @@ export function makeFacadeTexture(THREE, rng, baseColor, floors, cols) {
     // A soft left-to-right gradient so two buildings in the same colour
     // still read as different faces.
     const shade = ctx.createLinearGradient(0, 0, w, 0);
-    shade.addColorStop(0, 'rgba(0,0,0,0.18)');
-    shade.addColorStop(0.5, 'rgba(255,255,255,0.06)');
-    shade.addColorStop(1, 'rgba(0,0,0,0.18)');
+    const stops = [
+      [0, 'rgba(0,0,0,0.18)'],
+      [0.5, 'rgba(255,255,255,0.06)'],
+      [1, 'rgba(0,0,0,0.18)'],
+    ];
+    for (const [at, color] of stops) shade.addColorStop(at, color);
     ctx.fillStyle = shade;
     ctx.fillRect(0, 0, w, h);
     const margin = 10;
     const cellW = (w - margin * 2) / cols;
     const cellH = (h - 34) / floors;
     paintWindows(ctx, rng, margin, cellW, cellH, floors, cols);
-    // Ground floor shopfronts.
+    // Ground floor shopfronts: a dark band with lit panes.
+    const bandTop = h - 26;
     ctx.fillStyle = '#20242c';
-    ctx.fillRect(0, h - 26, w, 26);
+    ctx.fillRect(0, bandTop, w, 26);
     ctx.fillStyle = '#7fd4ff';
     for (let col = 0; col < cols; col++) {
       ctx.fillRect(margin + col * cellW + 3, h - 21, cellW - 6, 14);
@@ -151,10 +159,8 @@ export function makeRoadTexture(THREE) {
     ctx.fillRect(0, 0, 3, h);
     ctx.fillRect(w - 3, 0, 3, h);
     ctx.fillStyle = '#e8c33c';
-    let y = 8;
-    while (y < h) {
+    for (let y = 8; y < h; y += 64) {
       ctx.fillRect(w / 2 - 2, y, 4, 32);
-      y += 64;
     }
   });
 }

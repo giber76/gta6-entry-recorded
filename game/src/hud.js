@@ -4,7 +4,7 @@
 // The radio label shows the current station; the car bar appears only while driving.
 //
 // The damage vignette flashes red when Marlo takes a hit (player.js
-// sets G.hudFlash) and fades out over the next second.
+// sets game.hudFlash) and fades out over the next second.
 
 import { nearestParkedCar } from './vehicles.js';
 
@@ -22,36 +22,39 @@ function money(c) {
   return `$${c.toLocaleString('en-US')}`;
 }
 
-export function createHud(G) {
-  const hud = {
-    healthFill: grab('health-fill'),
-    healthText: grab('health-text'),
-    carHealthBar: grab('car-health-bar'),
-    carHealthFill: grab('car-health-fill'),
-    carHealthLabel: grab('car-health-label'),
-    cashText: grab('cash-text'),
-    starsEl: grab('stars'),
-    objectiveText: grab('objective-text'),
-    objectiveDist: grab('objective-dist'),
-    promptEl: grab('prompt'),
-    dialogueEl: grab('dialogue'),
-    dialogueText: grab('dialogue-text'),
-    toastEl: grab('toasts'),
-    speedEl: grab('speed'),
-    weaponEl: grab('weapon'),
-    radioEl: grab('radio'),
-    flashEl: grab('damage-flash'),
-    missionEl: grab('mission-name'),
-    screens: {
-      start: grab('screen-start'),
-      pause: grab('screen-pause'),
-      busted: grab('screen-busted'),
-      win: grab('screen-win'),
-    },
-    startTitle: grab('start-title'),
-    winCash: grab('win-cash'),
-    bustedCash: grab('busted-cash'),
-    toasts: [],
+// Element ids, grouped by role. The HUD object is built from this table.
+const EL_IDS = {
+  healthFill: 'health-fill',
+  healthText: 'health-text',
+  carHealthBar: 'car-health-bar',
+  carHealthFill: 'car-health-fill',
+  carHealthLabel: 'car-health-label',
+  cashText: 'cash-text',
+  starsEl: 'stars',
+  objectiveText: 'objective-text',
+  objectiveDist: 'objective-dist',
+  promptEl: 'prompt',
+  dialogueEl: 'dialogue',
+  dialogueText: 'dialogue-text',
+  toastEl: 'toasts',
+  speedEl: 'speed',
+  weaponEl: 'weapon',
+  radioEl: 'radio',
+  flashEl: 'damage-flash',
+  missionEl: 'mission-name',
+  startTitle: 'start-title',
+  winCash: 'win-cash',
+  bustedCash: 'busted-cash',
+};
+
+export function createHud(game) {
+  const hud = { toasts: [] };
+  for (const [field, id] of Object.entries(EL_IDS)) hud[field] = grab(id);
+  hud.screens = {
+    start: grab('screen-start'),
+    pause: grab('screen-pause'),
+    busted: grab('screen-busted'),
+    win: grab('screen-win'),
   };
 
   hud.setHealth = function setHealth(h) {
@@ -63,13 +66,10 @@ export function createHud(G) {
 
   // The driven car's health, shown only while Marlo is behind the wheel.
   hud.setCarHealth = function setCarHealth(h) {
-    if (h == null) {
-      hud.carHealthBar.style.display = 'none';
-      hud.carHealthLabel.style.display = 'none';
-      return;
-    }
-    hud.carHealthBar.style.display = 'block';
-    hud.carHealthLabel.style.display = 'block';
+    const show = h != null;
+    hud.carHealthBar.style.display = show ? 'block' : 'none';
+    hud.carHealthLabel.style.display = show ? 'block' : 'none';
+    if (!show) return;
     const pct = Math.max(0, Math.min(100, h));
     hud.carHealthFill.style.width = `${pct}%`;
     hud.carHealthFill.style.background = healthColor(h);
@@ -80,7 +80,8 @@ export function createHud(G) {
   };
 
   hud.setStars = function setStars(n) {
-    const s = Array.from({ length: 5 }, (_, i) => (i < n ? '★' : '☆')).join('');
+    let s = '';
+    for (let i = 0; i < 5; i++) s += i < n ? '★' : '☆';
     hud.starsEl.textContent = s;
     hud.starsEl.classList.toggle('hot', n > 0);
   };
@@ -141,61 +142,57 @@ export function createHud(G) {
     grab('hud').style.display = name === null ? 'block' : 'none';
   };
 
-  G.hud = hud;
+  game.hud = hud;
   return hud;
 }
 
 // What E does right now, as a prompt line.
-function currentPrompt(G) {
-  const p = G.player;
-  const m = G.mission;
-  if (G.state !== 'playing' || p.health <= 0) return '';
-  let prompt = '';
+function currentPrompt(game) {
+  const p = game.player;
+  const m = game.mission;
+  if (game.state !== 'playing' || p.health <= 0) return '';
+  const bits = [];
   if (p.inCar) {
-    prompt = '[E] Get out    [SPACE] Handbrake';
-  } else {
-    const near = nearestParkedCar(G);
-    if (near) {
-      prompt = '[E] Steal car';
-    } else if (
-      m.index === 4 &&
-      m.stage === 0 &&
-      m.target &&
-      Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) < 6
-    ) {
-      prompt = 'Hold [E] to grab the cash';
-    }
+    bits.push('[E] Get out', '[SPACE] Handbrake');
+  } else if (nearestParkedCar(game)) {
+    bits.push('[E] Steal car');
+  } else if (
+    m.index === 4 &&
+    m.stage === 0 &&
+    m.target &&
+    Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) < 6
+  ) {
+    bits.push('Hold [E] to grab the cash');
   }
-  if (p.hasPistol) prompt += '    [Q] Switch weapon    [Click] Shoot';
-  else if (!p.inCar) prompt += '    [Q] Fists    [Click] Punch';
-  return prompt;
+  if (p.hasPistol) bits.push('[Q] Switch weapon', '[Click] Shoot');
+  else if (!p.inCar) bits.push('[Q] Fists', '[Click] Punch');
+  return bits.join('    ');
 }
 
 // Per-frame HUD refresh: health, cash, objective distance, speed, prompts,
 // the driven car's health, the radio station and the damage vignette.
-export function updateHud(G, dt) {
-  const hud = G.hud;
-  const p = G.player;
+export function updateHud(game, dt) {
+  const hud = game.hud;
+  const p = game.player;
   hud.setHealth(p.health);
   hud.setCash(p.cash);
-  hud.setStars(G.wanted);
+  hud.setStars(game.wanted);
   hud.setWeapon(p.hasPistol ? p.weapon : 'fists');
   const speedKmh = p.inCar && p.car ? Math.abs(p.car.speed) * 3.6 : p.speed * 3.6;
   hud.setSpeed(speedKmh);
-  if (p.inCar && p.car) hud.setCarHealth(p.car.health);
-  else hud.setCarHealth(null);
-  hud.setRadio(G.audio ? G.audio.stationName() : '');
+  hud.setCarHealth(p.inCar && p.car ? p.car.health : null);
+  hud.setRadio(game.audio ? game.audio.stationName() : '');
   // The damage vignette: flashes red on a hit, then fades out.
   if (hud.flashEl) {
-    hud.flashEl.style.opacity = String(Math.max(0, G.hudFlash ?? 0));
-    G.hudFlash = Math.max(0, (G.hudFlash ?? 0) - dt * 1.4);
+    hud.flashEl.style.opacity = String(Math.max(0, game.hudFlash ?? 0));
+    game.hudFlash = Math.max(0, (game.hudFlash ?? 0) - dt * 1.4);
   }
-  const m = G.mission;
+  const m = game.mission;
   const dist = m.target ? Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) : null;
   hud.setObjective(m.objective, dist);
-  hud.setPrompt(currentPrompt(G));
+  hud.setPrompt(currentPrompt(game));
   hud.tickToasts(dt);
   // Crosshair shows only on foot with the pistol out.
   grab('crosshair').style.display =
-    G.state === 'playing' && !p.inCar && p.hasPistol && p.weapon === 'pistol' ? 'block' : 'none';
+    game.state === 'playing' && !p.inCar && p.hasPistol && p.weapon === 'pistol' ? 'block' : 'none';
 }

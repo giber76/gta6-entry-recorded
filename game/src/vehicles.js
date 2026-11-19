@@ -29,6 +29,8 @@ const PARKED_ROWS = [
 ];
 const PARKED_SPOTS = PARKED_ROWS.map(([x, z, heading, color, mission]) => ({ x, z, heading, color, mission }));
 
+// Damage thresholds: a car smokes below 50, burns below 25, and takes
+// 2 burn damage per second while it burns.
 const DAMAGE = { burnPerSecond: 2, smokeBelow: 50, burnBelow: 25 };
 
 // Body pieces as [shape, skin, x, y, z, castsShadow] — one pass builds
@@ -105,13 +107,13 @@ export function makeCarMesh(THREE, color, isPolice) {
   return { group, wheels };
 }
 
-export function createCar(G, opts) {
+export function createCar(game, opts) {
   const THREE = window.THREE;
   const color = opts.color ?? PAINT_POOL[Math.floor(Math.random() * PAINT_POOL.length)];
   const { group, wheels } = makeCarMesh(THREE, color, !!opts.police);
   group.position.set(opts.x, 0, opts.z);
   group.rotation.y = opts.heading ?? 0;
-  G.scene.add(group);
+  game.scene.add(group);
   const car = {
     group,
     wheels,
@@ -145,33 +147,33 @@ export function createCar(G, opts) {
 
 // Hurt a car. At zero health the car wrecks: it explodes, throws its
 // driver clear and stays a burnt-out shell until it is towed or respawns.
-export function damageCar(G, car, amount) {
+export function damageCar(game, car, amount) {
   if (!car || car.wrecked || car.dead || amount <= 0) return;
   car.health -= amount;
   if (car.health > 0) return;
   car.health = 0;
-  wreckCar(G, car);
+  wreckCar(game, car);
 }
 
 // Put a car back to full health (debug hook). A wrecked car stays
 // wrecked — only a live car can be repaired.
-export function repairCar(G, car) {
+export function repairCar(game, car) {
   if (!car || car.wrecked) return;
   car.health = 100;
 }
 
-export function wreckCar(G, car) {
+export function wreckCar(game, car) {
   car.wrecked = true;
   car.wreckTimer = 8;
   car.speed = 0;
-  explodeCar(G, car.pos.x, car.pos.z);
+  explodeCar(game, car.pos.x, car.pos.z);
   if (car.isPlayer) {
     // Marlo is thrown clear of the wreck, on foot and hurt.
-    stepOut(G);
-    damagePlayer(G, 10, 'car explosion');
-    if (G.hud) G.hud.toast('Your car exploded — find another ride');
+    stepOut(game);
+    damagePlayer(game, 10, 'car explosion');
+    if (game.hud) game.hud.toast('Your car exploded — find another ride');
   }
-  if (G.audio) G.audio.crash();
+  if (game.audio) game.audio.crash();
 }
 
 // A one-word damage state for a car, used by the HUD and the minimap
@@ -185,19 +187,19 @@ export function carDamageState(car) {
 
 // Parked cars Marlo can steal, including the orange mission coupe by
 // the plaza.
-export function spawnParkedCars(G) {
-  G.parkedCars = PARKED_SPOTS.map((spot) => {
-    const car = createCar(G, { x: spot.x, z: spot.z, heading: spot.heading, color: spot.color, parked: true });
+export function spawnParkedCars(game) {
+  game.parkedCars = PARKED_SPOTS.map((spot) => {
+    const car = createCar(game, { x: spot.x, z: spot.z, heading: spot.heading, color: spot.color, parked: true });
     car.mission = !!spot.mission;
     return car;
   });
-  G.missionCoupe = G.parkedCars[0];
-  return G.parkedCars;
+  game.missionCoupe = game.parkedCars[0];
+  return game.parkedCars;
 }
 
 // Shove a car out of any building it overlaps; true when it was pushed.
-function pushCarOutOfWalls(G, car) {
-  const fixed = collideCircle(G, car.pos.x, car.pos.z, 2.2);
+function pushOutOfWalls(game, car) {
+  const fixed = collideCircle(game, car.pos.x, car.pos.z, 2.2);
   if (!fixed.hit) return false;
   car.pos.x = fixed.x;
   car.pos.z = fixed.z;
@@ -206,8 +208,8 @@ function pushCarOutOfWalls(G, car) {
 
 // Bump into traffic cars: both are pushed apart and slow down, and a
 // hard bump damages both cars.
-function bumpIntoTraffic(G, car) {
-  for (const other of G.trafficCars || []) {
+function bumpTraffic(game, car) {
+  for (const other of game.trafficCars || []) {
     if (other.wrecked) continue;
     const dx = car.pos.x - other.pos.x;
     const dz = car.pos.z - other.pos.z;
@@ -220,25 +222,25 @@ function bumpIntoTraffic(G, car) {
     other.pos.z -= dz * shove * 0.5;
     if (Math.abs(car.speed) > 8) {
       car.speed *= 0.7;
-      damageCar(G, car, 6);
-      damageCar(G, other, 6);
-      if (G.audio) G.audio.crash();
+      damageCar(game, car, 6);
+      damageCar(game, other, 6);
+      if (game.audio) game.audio.crash();
     }
   }
 }
 
 // Read the drive keys into gas / reverse / handbrake / steer.
-function readPedals(G) {
-  const gas = G.keys.has('KeyW');
-  const reverse = G.keys.has('KeyS');
-  const handbrake = G.keys.has('Space');
+function readControls(game) {
+  const gas = game.keys.has('KeyW');
+  const reverse = game.keys.has('KeyS');
+  const handbrake = game.keys.has('Space');
   let steerInput = 0;
-  if (G.keys.has('KeyA')) steerInput += 1;
-  if (G.keys.has('KeyD')) steerInput -= 1;
+  if (game.keys.has('KeyA')) steerInput += 1;
+  if (game.keys.has('KeyD')) steerInput -= 1;
   return { gas, reverse, handbrake, steerInput };
 }
 
-function driveForces(car, pedals, dt) {
+function applyDrive(car, pedals, dt) {
   if (pedals.gas) car.speed += car.accel * dt;
   if (pedals.reverse) {
     if (car.speed > 0.5) car.speed -= car.brake * dt;
@@ -256,7 +258,7 @@ function driveForces(car, pedals, dt) {
   car.speed = clamp(car.speed, -12, car.topSpeed);
 }
 
-function steerCar(car, pedals, dt) {
+function applySteering(car, pedals, dt) {
   const target = pedals.steerInput * 0.55 * (car.speed >= 0 ? 1 : -1);
   car.steer += (target - car.steer) * Math.min(1, dt * 8);
   const turn = car.steer * clamp(Math.abs(car.speed) / 8, 0, 1) * 1.9;
@@ -265,14 +267,14 @@ function steerCar(car, pedals, dt) {
 
 // A hurt car smokes, and a burning car keeps losing health until it
 // wrecks. Tyre smoke puffs from the rear wheels on a hard handbrake.
-function wearAndSmoke(G, car, pedals, dt) {
+function wearSmoke(game, car, pedals, dt) {
   if (car.health < DAMAGE.smokeBelow && car.health > 0) {
-    carExhaust(G, car, dt);
+    carExhaust(game, car, dt);
     if (car.health < DAMAGE.burnBelow) {
       // A burning car vents a continuous smoke plume and takes
       // burn damage until it wrecks.
-      emitBurningSmoke(G, car.pos.x, car.pos.z, dt);
-      damageCar(G, car, DAMAGE.burnPerSecond * dt);
+      emitBurningSmoke(game, car.pos.x, car.pos.z, dt);
+      damageCar(game, car, DAMAGE.burnPerSecond * dt);
     }
   }
   car.skidTimer -= dt;
@@ -280,32 +282,32 @@ function wearAndSmoke(G, car, pedals, dt) {
     car.skidTimer = 0.08;
     const bx = car.pos.x - Math.sin(car.heading) * 1.5;
     const bz = car.pos.z - Math.cos(car.heading) * 1.5;
-    spawnSkidSmoke(G, bx, bz);
+    spawnSkidSmoke(game, bx, bz);
   }
 }
 
-export function updatePlayerCar(G, dt) {
-  const p = G.player;
+export function updatePlayerCar(game, dt) {
+  const p = game.player;
   const car = p.car;
   if (!p.inCar || !car) return;
   if (car.wrecked) return;
   // The pistol cooldown ticks while driving, so a drive-by can fire
   // more than once.
   p.shootCooldown = Math.max(0, p.shootCooldown - dt);
-  const pedals = readPedals(G);
-  driveForces(car, pedals, dt);
-  steerCar(car, pedals, dt);
+  const pedals = readControls(game);
+  applyDrive(car, pedals, dt);
+  applySteering(car, pedals, dt);
   car.pos.x += Math.sin(car.heading) * car.speed * dt;
   car.pos.z += Math.cos(car.heading) * car.speed * dt;
-  if (pushCarOutOfWalls(G, car)) {
+  if (pushOutOfWalls(game, car)) {
     if (Math.abs(car.speed) > 6) {
-      damageCar(G, car, Math.abs(car.speed) * 0.5);
-      if (G.audio) G.audio.crash();
+      damageCar(game, car, Math.abs(car.speed) * 0.5);
+      if (game.audio) game.audio.crash();
     }
     car.speed *= 0.45;
   }
-  bumpIntoTraffic(G, car);
-  wearAndSmoke(G, car, pedals, dt);
+  bumpTraffic(game, car);
+  wearSmoke(game, car, pedals, dt);
   if (car.wrecked) return;
   car.group.rotation.y = car.heading;
   const spin = car.speed * dt * 2.6;
@@ -317,31 +319,31 @@ export function updatePlayerCar(G, dt) {
   p.pos.x = car.pos.x;
   p.pos.z = car.pos.z;
   p.speed = Math.abs(car.speed);
-  if (G.audio) G.audio.setEngine(Math.abs(car.speed) / car.topSpeed, true);
+  if (game.audio) game.audio.setEngine(Math.abs(car.speed) / car.topSpeed, true);
 }
 
-function stepOut(G) {
-  const p = G.player;
+function stepOut(game) {
+  const p = game.player;
   const car = p.car;
   car.isPlayer = false;
   p.inCar = false;
   p.car = null;
   p.pos.x = car.pos.x + Math.cos(car.heading) * 2.4;
   p.pos.z = car.pos.z - Math.sin(car.heading) * 2.4;
-  const fixed = collideCircle(G, p.pos.x, p.pos.z, 0.6);
+  const fixed = collideCircle(game, p.pos.x, p.pos.z, 0.6);
   p.pos.x = fixed.x;
   p.pos.z = fixed.z;
   p.group.position.set(p.pos.x, 0, p.pos.z);
   p.group.visible = true;
-  if (G.audio) G.audio.setEngine(0, false);
+  if (game.audio) game.audio.setEngine(0, false);
 }
 
 // Nearest stealable parked car, or null when none is in reach.
-function nearestStealable(G) {
-  const p = G.player;
+function nearestStealable(game) {
+  const p = game.player;
   let best = null;
   let bestD = 4.5;
-  for (const car of G.parkedCars || []) {
+  for (const car of game.parkedCars || []) {
     if (car.dead || car.wrecked) continue;
     const gap = Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z);
     if (gap < bestD) {
@@ -353,15 +355,15 @@ function nearestStealable(G) {
 }
 
 // E near a parked car: get in (steal). E while driving: get out.
-export function tryEnterExitCar(G) {
-  const p = G.player;
-  if (G.state !== 'playing') return;
+export function tryEnterExitCar(game) {
+  const p = game.player;
+  if (game.state !== 'playing') return;
   if (p.inCar && p.car) {
-    stepOut(G);
+    stepOut(game);
     return;
   }
   if (p.inCar) return;
-  const car = nearestStealable(G);
+  const car = nearestStealable(game);
   if (!car) return;
   car.parked = false;
   car.isPlayer = true;
@@ -370,12 +372,12 @@ export function tryEnterExitCar(G) {
   p.group.visible = false;
   p.pos.x = car.pos.x;
   p.pos.z = car.pos.z;
-  if (G.audio) G.audio.engineStart();
-  if (G.onCarStolen) G.onCarStolen(car);
+  if (game.audio) game.audio.engineStart();
+  if (game.onCarStolen) game.onCarStolen(car);
 }
 
-export function nearestParkedCar(G) {
-  const p = G.player;
+export function nearestParkedCar(game) {
+  const p = game.player;
   if (p.inCar) return null;
-  return nearestStealable(G);
+  return nearestStealable(game);
 }

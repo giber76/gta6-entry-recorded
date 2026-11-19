@@ -8,44 +8,54 @@
 const SAVE_KEY = 'solara-bay-save-v1';
 const SAVE_VERSION = 1;
 
-function readStorage() {
-  try {
-    return localStorage.getItem(SAVE_KEY);
-  } catch (err) {
-    return null;
-  }
-}
+// Safe localStorage access: returns null/false instead of throwing
+// when storage is unavailable (private mode, disabled cookies).
+const store = {
+  read() {
+    try {
+      return localStorage.getItem(SAVE_KEY);
+    } catch (err) {
+      return null;
+    }
+  },
+  write(text) {
+    try {
+      localStorage.setItem(SAVE_KEY, text);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  },
+  clear() {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch (err) {
+      // Storage unavailable: nothing to clear.
+    }
+  },
+};
 
-function writeStorage(text) {
-  try {
-    localStorage.setItem(SAVE_KEY, text);
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
-export function saveGame(G) {
-  const p = G.player;
+export function saveGame(game) {
+  const p = game.player;
   const data = {
     version: SAVE_VERSION,
     cash: p.cash,
-    mission: G.mission.index,
+    mission: game.mission.index,
     x: p.pos.x,
     z: p.pos.z,
     health: p.health,
     hasPistol: p.hasPistol,
-    station: G.audio ? G.audio.stationIndex() : 0,
+    station: game.audio ? game.audio.stationIndex() : 0,
     // The minimap zoom and the radio station are remembered too, so a
     // continued game opens exactly as Marlo left it.
-    minimapZoom: G.minimapZoom ?? 1,
+    minimapZoom: game.minimapZoom ?? 1,
     savedAt: Date.now(),
   };
-  return writeStorage(JSON.stringify(data));
+  return store.write(JSON.stringify(data));
 }
 
 export function loadSave() {
-  const raw = readStorage();
+  const raw = store.read();
   if (raw === null) return null;
   let data;
   try {
@@ -62,9 +72,5 @@ export function hasSave() {
 }
 
 export function clearSave() {
-  try {
-    localStorage.removeItem(SAVE_KEY);
-  } catch (err) {
-    // Storage unavailable: nothing to clear.
-  }
+  store.clear();
 }

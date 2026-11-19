@@ -1,105 +1,115 @@
-// audio.js — every sound in Solara Bay is synthesised with WebAudio:
-// no audio files, no network. Engine hum, police siren, gunshots,
-// punches, pickups, mission stingers — and a three-station radio.
-// First R press turns the radio on to SOLARA FM; later presses cycle.
+// audio.js — every sound in Solara Bay is made with WebAudio: no audio
+// files, no network. Engine hum, police siren, gunshots, punches,
+// pickups, mission stingers — and a three-station radio.
+// First R press switches the radio on to SOLARA FM; later presses cycle.
 //
-// The sound engine has three layers: a voice rack (the two always-on
-// voices, engine and siren), a pattern player (short sequences of notes
-// and noise bursts, described as data), and the radio (a 16-step
-// sequencer that loops its station's bass and lead lines).
+// Three layers do the work: a voice rack (the two always-on voices,
+// engine and siren), a pattern player (short sequences of notes and
+// noise bursts, described as data), and the radio (a 16-step sequencer
+// that loops its station's bass and lead lines).
 
 // MIDI note number to frequency in Hz.
-function midiToFreq(m) {
+function noteHz(m) {
   return 440 * Math.pow(2, (m - 69) / 12);
 }
 
-// The radio stations. Each one is a 16-step loop: bass and lead are MIDI
-// note numbers (0 = rest), played as sixteenth notes at the station's
-// tempo. A hi-hat ticks on every even step.
-const STATIONS = [
-  {
-    name: 'SOLARA FM',
-    bpm: 96,
-    bassWave: 'triangle',
-    leadWave: 'sine',
-    bass: [33, 0, 33, 0, 36, 0, 33, 0, 40, 0, 40, 0, 36, 0, 31, 0],
-    lead: [69, 0, 72, 0, 76, 0, 72, 0, 69, 0, 67, 0, 64, 0, 67, 0],
-  },
-  {
-    name: 'BAY 97.5',
-    bpm: 112,
-    bassWave: 'square',
-    leadWave: 'triangle',
-    bass: [28, 0, 28, 31, 28, 0, 35, 0, 28, 0, 28, 31, 33, 0, 31, 0],
-    lead: [64, 67, 0, 69, 0, 67, 64, 0, 62, 0, 64, 0, 67, 69, 0, 0],
-  },
-  {
-    name: 'VICE 101',
-    bpm: 128,
-    bassWave: 'sawtooth',
-    leadWave: 'square',
-    bass: [26, 26, 0, 26, 29, 0, 26, 0, 31, 0, 29, 0, 26, 0, 24, 0],
-    lead: [62, 0, 65, 0, 69, 0, 65, 0, 62, 0, 65, 69, 0, 67, 65, 0],
-  },
+// The radio stations. Bass and lead are 16-step loops written as
+// space-separated MIDI note numbers (0 = rest), played as sixteenth
+// notes at the station's tempo. A hi-hat ticks on every even step.
+const STATION_ROWS = [
+  ['SOLARA FM', 96, 'triangle', 'sine',
+    '33 0 33 0 36 0 33 0 40 0 40 0 36 0 31 0',
+    '69 0 72 0 76 0 72 0 69 0 67 0 64 0 67 0'],
+  ['BAY 97.5', 112, 'square', 'triangle',
+    '28 0 28 31 28 0 35 0 28 0 28 31 33 0 31 0',
+    '64 67 0 69 0 67 64 0 62 0 64 0 67 69 0 0'],
+  ['VICE 101', 128, 'sawtooth', 'square',
+    '26 26 0 26 29 0 26 0 31 0 29 0 26 0 24 0',
+    '62 0 65 0 69 0 65 0 62 0 65 69 0 67 65 0'],
 ];
+const STATIONS = STATION_ROWS.map(([name, bpm, bassWave, leadWave, bass, lead]) => ({
+  name,
+  bpm,
+  bassWave,
+  leadWave,
+  bass: bass.split(' ').map(Number),
+  lead: lead.split(' ').map(Number),
+}));
 
-// One-shot effects, as patterns: a list of events. A note event is
-// { at, freq, dur, wave, vol, slide? }; a burst event is
-// { at, dur, vol, cutoff }. Times are milliseconds from the pattern start.
-const PATTERNS = {
+// One-shot effects, as compact event rows. A note row is
+// [at, freq, dur, wave, vol, slide?]; a burst row is
+// [at, dur, vol, cutoff]. Times are milliseconds from the pattern start.
+const PATTERN_ROWS = {
   shot: [
-    { at: 0, dur: 0.14, vol: 0.5, cutoff: 2600 },
-    { at: 0, freq: 160, dur: 0.08, wave: 'square', vol: 0.2, slide: 60 },
+    [0, 0.14, 0.5, 2600],
+    [0, 160, 0.08, 'square', 0.2, 60],
   ],
-  enemyShot: [{ at: 0, dur: 0.12, vol: 0.22, cutoff: 2000 }],
-  punch: [{ at: 0, dur: 0.08, vol: 0.3, cutoff: 900 }],
+  enemyShot: [[0, 0.12, 0.22, 2000]],
+  punch: [[0, 0.08, 0.3, 900]],
   pickup: [
-    { at: 0, freq: 660, dur: 0.1, wave: 'sine', vol: 0.25 },
-    { at: 90, freq: 990, dur: 0.14, wave: 'sine', vol: 0.25 },
+    [0, 660, 0.1, 'sine', 0.25],
+    [90, 990, 0.14, 'sine', 0.25],
   ],
   cash: [
-    { at: 0, freq: 880, dur: 0.09, wave: 'triangle', vol: 0.3 },
-    { at: 90, freq: 1174, dur: 0.09, wave: 'triangle', vol: 0.3 },
-    { at: 180, freq: 1568, dur: 0.16, wave: 'triangle', vol: 0.3 },
+    [0, 880, 0.09, 'triangle', 0.3],
+    [90, 1174, 0.09, 'triangle', 0.3],
+    [180, 1568, 0.16, 'triangle', 0.3],
   ],
-  crash: [{ at: 0, dur: 0.2, vol: 0.35, cutoff: 700 }],
+  crash: [[0, 0.2, 0.35, 700]],
   explosion: [
-    { at: 0, dur: 0.5, vol: 0.6, cutoff: 500 },
-    { at: 0, freq: 90, dur: 0.5, wave: 'sine', vol: 0.4, slide: 30 },
-    { at: 120, dur: 0.3, vol: 0.3, cutoff: 1200 },
+    [0, 0.5, 0.6, 500],
+    [0, 90, 0.5, 'sine', 0.4, 30],
+    [120, 0.3, 0.3, 1200],
   ],
   busted: [
-    { at: 0, freq: 392, dur: 0.25, wave: 'sawtooth', vol: 0.2, slide: 196 },
-    { at: 220, freq: 311, dur: 0.4, wave: 'sawtooth', vol: 0.2, slide: 155 },
+    [0, 392, 0.25, 'sawtooth', 0.2, 196],
+    [220, 311, 0.4, 'sawtooth', 0.2, 155],
   ],
   win: [
-    { at: 0, freq: 523, dur: 0.22, wave: 'triangle', vol: 0.3 },
-    { at: 130, freq: 659, dur: 0.22, wave: 'triangle', vol: 0.3 },
-    { at: 260, freq: 784, dur: 0.22, wave: 'triangle', vol: 0.3 },
-    { at: 390, freq: 1046, dur: 0.22, wave: 'triangle', vol: 0.3 },
+    [0, 523, 0.22, 'triangle', 0.3],
+    [130, 659, 0.22, 'triangle', 0.3],
+    [260, 784, 0.22, 'triangle', 0.3],
+    [390, 1046, 0.22, 'triangle', 0.3],
   ],
   // A new job starts: a short rising figure that says "go".
   missionStart: [
-    { at: 0, freq: 392, dur: 0.12, wave: 'triangle', vol: 0.28 },
-    { at: 110, freq: 523, dur: 0.12, wave: 'triangle', vol: 0.28 },
-    { at: 220, freq: 659, dur: 0.2, wave: 'triangle', vol: 0.3 },
+    [0, 392, 0.12, 'triangle', 0.28],
+    [110, 523, 0.12, 'triangle', 0.28],
+    [220, 659, 0.2, 'triangle', 0.3],
   ],
   // The heat goes up: a low two-note warning.
   wantedUp: [
-    { at: 0, freq: 220, dur: 0.16, wave: 'sawtooth', vol: 0.2, slide: 180 },
-    { at: 150, freq: 233, dur: 0.2, wave: 'sawtooth', vol: 0.2, slide: 175 },
+    [0, 220, 0.16, 'sawtooth', 0.2, 180],
+    [150, 233, 0.2, 'sawtooth', 0.2, 175],
   ],
   // The engine turning over when Marlo steals a car.
   engineStart: [
-    { at: 0, freq: 60, dur: 0.3, wave: 'sawtooth', vol: 0.25, slide: 110 },
-    { at: 260, freq: 110, dur: 0.15, wave: 'sawtooth', vol: 0.2, slide: 165 },
+    [0, 60, 0.3, 'sawtooth', 0.25, 110],
+    [260, 110, 0.15, 'sawtooth', 0.2, 165],
   ],
   // A low-health heartbeat: two dull thumps, Marlo is almost done.
   heartbeat: [
-    { at: 0, freq: 55, dur: 0.12, wave: 'sine', vol: 0.4 },
-    { at: 180, freq: 50, dur: 0.16, wave: 'sine', vol: 0.35 },
+    [0, 55, 0.12, 'sine', 0.4],
+    [180, 50, 0.16, 'sine', 0.35],
   ],
 };
+
+// Expand the compact rows into event objects. A row with a wave string
+// is a note { at, freq, dur, wave, vol, slide? }; a row without one is
+// a noise burst { at, dur, vol, cutoff }.
+function expandPattern(rows) {
+  return rows.map((row) => {
+    if (typeof row[3] === 'string') {
+      const [at, freq, dur, wave, vol, slide] = row;
+      return { at, freq, dur, wave, vol, slide };
+    }
+    const [at, dur, vol, cutoff] = row;
+    return { at, dur, vol, cutoff };
+  });
+}
+const PATTERNS = Object.fromEntries(
+  Object.entries(PATTERN_ROWS).map(([name, rows]) => [name, expandPattern(rows)])
+);
 
 export function createAudio() {
   const state = {
@@ -112,7 +122,7 @@ export function createAudio() {
 
   // One short oscillator note, optionally sliding to another pitch.
   // spec: { freq, dur, wave, vol, slide?, at? } — at is ms from now.
-  function scheduleNote(spec) {
+  function playTone(spec) {
     if (!state.ctx) return;
     const ctx = state.ctx;
     const t = ctx.currentTime + (spec.at ?? 0) / 1000;
@@ -133,7 +143,7 @@ export function createAudio() {
 
   // One short burst of filtered noise (shots, punches, crashes).
   // spec: { dur, vol, cutoff, at? }
-  function scheduleHiss(spec) {
+  function playHiss(spec) {
     if (!state.ctx) return;
     const ctx = state.ctx;
     const t = ctx.currentTime + (spec.at ?? 0) / 1000;
@@ -155,19 +165,19 @@ export function createAudio() {
     src.start(t);
   }
 
-  // Play a pattern: notes go through scheduleNote, bursts through
-  // scheduleHiss. The pattern's `at` offsets are milliseconds.
-  function playPattern(events) {
+  // Play a pattern: notes go through playTone, bursts through
+  // playHiss. The pattern's `at` offsets are milliseconds.
+  function playEvents(events) {
     for (const ev of events) {
-      if (ev.freq !== undefined) scheduleNote(ev);
-      else scheduleHiss(ev);
+      if (ev.freq !== undefined) playTone(ev);
+      else playHiss(ev);
     }
   }
 
   // The radio: a 16-step sequencer looping the current station. Each
   // step plays the station's bass note, lead note and (on even steps)
   // a hi-hat tick. R cycles the station; the HUD reads the name.
-  function buildRadio() {
+  function makeRadio() {
     // fresh: the first R press after the radio is built returns the
     // current station (SOLARA FM) without advancing — the station the
     // radio starts on is the one the first press should show.
@@ -200,8 +210,8 @@ export function createAudio() {
         const s = radio.step;
         const bassNote = station.bass[s];
         if (bassNote) {
-          scheduleNote({
-            freq: midiToFreq(bassNote),
+          playTone({
+            freq: noteHz(bassNote),
             dur: stepDur * 0.9,
             wave: station.bassWave,
             vol: 0.16,
@@ -209,14 +219,14 @@ export function createAudio() {
         }
         const leadNote = station.lead[s];
         if (leadNote) {
-          scheduleNote({
-            freq: midiToFreq(leadNote),
+          playTone({
+            freq: noteHz(leadNote),
             dur: stepDur * 0.9,
             wave: station.leadWave,
             vol: 0.08,
           });
         }
-        if (s % 2 === 0) scheduleHiss({ dur: 0.03, vol: 0.05, cutoff: 8000 });
+        if (s % 2 === 0) playHiss({ dur: 0.03, vol: 0.05, cutoff: 8000 });
         radio.step = (radio.step + 1) % 16;
       }
     };
@@ -225,7 +235,7 @@ export function createAudio() {
 
   // Build the context and the two always-on voices on first use.
   // Returns false if the browser has no WebAudio.
-  function buildContext() {
+  function ensureContext() {
     if (state.ctx) {
       if (state.ctx.state === 'suspended') state.ctx.resume();
       return true;
@@ -265,13 +275,13 @@ export function createAudio() {
     sirenGain.connect(state.master);
     sirenOsc.start();
     state.siren = { osc: sirenOsc, gain: sirenGain, timer: 0, high: false };
-    state.radio = buildRadio();
+    state.radio = makeRadio();
     return true;
   }
 
   // The public sound board. Every effect ensures the context first.
   const api = {
-    unlock: buildContext,
+    unlock: ensureContext,
 
     setEngine(speed01, on) {
       if (!state.ctx || !state.engine) return;
@@ -301,72 +311,72 @@ export function createAudio() {
     },
 
     shot() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.shot);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.shot);
     },
 
     enemyShot() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.enemyShot);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.enemyShot);
     },
 
     punch() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.punch);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.punch);
     },
 
     pickup() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.pickup);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.pickup);
     },
 
     cash() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.cash);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.cash);
     },
 
     crash() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.crash);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.crash);
     },
 
     explosion() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.explosion);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.explosion);
     },
 
     busted() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.busted);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.busted);
     },
 
     win() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.win);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.win);
     },
 
     missionStart() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.missionStart);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.missionStart);
     },
 
     wantedUp() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.wantedUp);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.wantedUp);
     },
 
     engineStart() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.engineStart);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.engineStart);
     },
 
     heartbeat() {
-      if (!buildContext()) return;
-      playPattern(PATTERNS.heartbeat);
+      if (!ensureContext()) return;
+      playEvents(PATTERNS.heartbeat);
     },
 
     nextStation() {
-      if (!buildContext()) return '';
+      if (!ensureContext()) return '';
       return state.radio.next();
     },
 
@@ -386,7 +396,7 @@ export function createAudio() {
     },
 
     setStation(i) {
-      if (!buildContext()) return;
+      if (!ensureContext()) return;
       state.radio.set(i);
     },
   };

@@ -2,7 +2,6 @@
 // speeding cars and gunshots. A walker hit by a fast car is knocked down,
 // and that draws the law. An explosion sends every walker nearby running,
 // and a blast within 6 u knocks them flat for 3 s.
-// and knocks flat anyone standing too close to the blast.
 
 import { ROADS } from './city.js';
 import { makeRng, clamp } from './util.js';
@@ -12,43 +11,44 @@ const WALKERS = 14;
 const SHIRTS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xecf0f1, 0xe67e22];
 
 // Build one walker: a small low-poly figure standing on a sidewalk.
-function buildWalker(THREE, dice, index) {
-  const street = dice.pick(ROADS);
-  const run = dice.range(-140, 140);
-  const side = dice.chance(0.5) ? 7.5 : -7.5;
-  const along = dice.chance(0.5) ? 'x' : 'z';
+function buildWalker(THREE, rng, index) {
+  const street = rng.pick(ROADS);
+  const run = rng.range(-140, 140);
+  const side = rng.chance(0.5) ? 7.5 : -7.5;
+  const along = rng.chance(0.5) ? 'x' : 'z';
   const x = along === 'x' ? run : street + side;
   const z = along === 'x' ? street + side : run;
   const group = new THREE.Group();
   const shirt = new THREE.MeshLambertMaterial({ color: SHIRTS[index % SHIRTS.length] });
   const skin = new THREE.MeshLambertMaterial({ color: 0xc98d64 });
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 0.95, 8), shirt);
-  torso.position.y = 0.95;
-  torso.castShadow = true;
-  group.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), skin);
-  head.position.y = 1.65;
-  group.add(head);
-  const legL = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.11, 0.13, 0.6, 6),
-    new THREE.MeshLambertMaterial({ color: 0x333a44 })
-  );
-  legL.position.set(-0.14, 0.3, 0);
-  group.add(legL);
-  const legR = legL.clone();
+  const pants = new THREE.MeshLambertMaterial({ color: 0x333a44 });
+  const parts = [
+    [new THREE.CylinderGeometry(0.32, 0.38, 0.95, 8), shirt, 0, 0.95, 0, true],
+    [new THREE.SphereGeometry(0.26, 10, 8), skin, 0, 1.65, 0, false],
+    [new THREE.CylinderGeometry(0.11, 0.13, 0.6, 6), pants, -0.14, 0.3, 0, false],
+  ];
+  const built = [];
+  for (const [shape, mat, px, py, pz, shadow] of parts) {
+    const piece = new THREE.Mesh(shape, mat);
+    piece.position.set(px, py, pz);
+    piece.castShadow = shadow;
+    group.add(piece);
+    built.push(piece);
+  }
+  const legR = built[2].clone();
   legR.position.x = 0.14;
   group.add(legR);
   group.position.set(x, 0, z);
   return {
     group,
-    body: torso,
-    legL,
+    body: built[0],
+    legL: built[2],
     legR,
     pos: group.position,
     axis: along,
-    dir: dice.chance(0.5) ? 1 : -1,
-    speed: dice.range(1.2, 2.2),
-    phase: dice.range(0, 6),
+    dir: rng.chance(0.5) ? 1 : -1,
+    speed: rng.range(1.2, 2.2),
+    phase: rng.range(0, 6),
     down: 0,
     flee: 0,
     fleeX: 0,
@@ -56,20 +56,21 @@ function buildWalker(THREE, dice, index) {
   };
 }
 
-export function spawnPedestrians(G) {
+export function spawnPedestrians(game) {
   const THREE = window.THREE;
-  const dice = makeRng(4242);
-  G.peds = [];
+  const rng = makeRng(4242);
+  game.peds = [];
   for (let i = 0; i < WALKERS; i++) {
-    const walker = buildWalker(THREE, dice, i);
-    G.scene.add(walker.group);
-    G.peds.push(walker);
+    const walker = buildWalker(THREE, rng, i);
+    game.scene.add(walker.group);
+    game.peds.push(walker);
   }
-  return G.peds;
+  return game.peds;
 }
 
-export function scatterPeds(G, x, z, radius) {
-  for (const walker of G.peds) {
+// Send walkers within a radius running away from a point.
+export function scatterPeds(game, x, z, radius) {
+  for (const walker of game.peds) {
     const dx = walker.pos.x - x;
     const dz = walker.pos.z - z;
     const d = Math.hypot(dx, dz);
@@ -83,9 +84,9 @@ export function scatterPeds(G, x, z, radius) {
 
 // An explosion nearby: walkers flee hard, and anyone standing within
 // six units of the blast is knocked flat by it.
-export function fleeFromBlast(G, x, z) {
-  scatterPeds(G, x, z, 35);
-  for (const walker of G.peds) {
+export function fleeFromBlast(game, x, z) {
+  scatterPeds(game, x, z, 35);
+  for (const walker of game.peds) {
     const d = Math.hypot(walker.pos.x - x, walker.pos.z - z);
     if (d < 6 && walker.down <= 0) {
       walker.down = 3;
@@ -105,10 +106,10 @@ export function fleeFromBlast(G, x, z) {
 // Which way this walker is walking right now: panicking (from a blast),
 // fleeing (from a car or a shot) or strolling along its road.
 // Returns [mx, mz, speed].
-function walkDirection(G, walker) {
+function walkDirection(game, walker) {
   if (walker.panic > 0) return [walker.panicX, walker.panicZ, 7.5];
   if (walker.flee > 0) return [walker.fleeX, walker.fleeZ, 6.5];
-  const p = G.player;
+  const p = game.player;
   if (p.inCar && p.car && Math.abs(p.car.speed) > 12) {
     const d = Math.hypot(walker.pos.x - p.car.pos.x, walker.pos.z - p.car.pos.z);
     if (d < 11 && d > 0.01) {
@@ -123,32 +124,32 @@ function walkDirection(G, walker) {
 }
 
 // A fast player car hitting a walker knocks them down and draws the law.
-function carHitsWalker(G, walker) {
-  const p = G.player;
+function carHitsWalker(game, walker) {
+  const p = game.player;
   if (!p.inCar || !p.car || Math.abs(p.car.speed) <= 5) return;
   const d = Math.hypot(walker.pos.x - p.car.pos.x, walker.pos.z - p.car.pos.z);
   if (d >= 2.4) return;
   walker.down = 4;
   walker.group.rotation.x = -Math.PI / 2;
-  if (G.onPedHit) G.onPedHit(walker);
+  if (game.onPedHit) game.onPedHit(walker);
 }
 
 // A speeding traffic car can hit Marlo on foot (once per cooldown).
-function trafficHitsPlayer(G) {
-  const p = G.player;
+function trafficHitsPlayer(game) {
+  const p = game.player;
   if (p.inCar || p.health <= 0) return;
-  if ((G.trafficHitAt ?? 0) + 1.2 >= (G.elapsed ?? 0)) return;
-  for (const car of G.trafficCars || []) {
+  if ((game.trafficHitAt ?? 0) + 1.2 >= (game.elapsed ?? 0)) return;
+  for (const car of game.trafficCars || []) {
     const cd = Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z);
     if (cd < 2.2 && Math.abs(car.traffic.speed) > 6) {
-      G.trafficHitAt = G.elapsed ?? 0;
-      if (G.onPlayerHitByTraffic) G.onPlayerHitByTraffic(car);
+      game.trafficHitAt = game.elapsed ?? 0;
+      if (game.onPlayerHitByTraffic) game.onPlayerHitByTraffic(car);
       return;
     }
   }
 }
 
-function stepWalker(G, walker, dt) {
+function stepWalker(game, walker, dt) {
   // Knocked down: lie there until the timer runs out.
   if (walker.down > 0) {
     walker.down -= dt;
@@ -157,10 +158,10 @@ function stepWalker(G, walker, dt) {
   }
   if (walker.flee > 0) walker.flee -= dt;
   if (walker.panic > 0) walker.panic -= dt;
-  const [mx, mz, speed] = walkDirection(G, walker);
+  const [mx, mz, speed] = walkDirection(game, walker);
   const nx = walker.pos.x + mx * speed * dt;
   const nz = walker.pos.z + mz * speed * dt;
-  const fixed = collideCircle(G, nx, nz, 0.5);
+  const fixed = collideCircle(game, nx, nz, 0.5);
   walker.pos.x = fixed.x;
   walker.pos.z = fixed.z;
   if (fixed.hit && walker.flee <= 0) walker.dir *= -1;
@@ -172,10 +173,10 @@ function stepWalker(G, walker, dt) {
   walker.legL.rotation.x = swing;
   walker.legR.rotation.x = -swing;
   walker.group.rotation.y = Math.atan2(mx, mz);
-  carHitsWalker(G, walker);
-  trafficHitsPlayer(G);
+  carHitsWalker(game, walker);
+  trafficHitsPlayer(game);
 }
 
-export function updatePedestrians(G, dt) {
-  for (const walker of G.peds) stepWalker(G, walker, dt);
+export function updatePedestrians(game, dt) {
+  for (const walker of game.peds) stepWalker(game, walker, dt);
 }

@@ -12,16 +12,21 @@ import { fileURLToPath } from 'node:url';
 const docRoot = join(fileURLToPath(new URL('.', import.meta.url)), 'game');
 const listenPort = Number(process.env.PORT ?? process.argv[2] ?? 8080);
 
-const MIME_TYPES: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-};
+const MIME_ROWS: [string, string][] = [
+  ['.html', 'text/html'],
+  ['.js', 'text/javascript'],
+  ['.mjs', 'text/javascript'],
+  ['.css', 'text/css'],
+  ['.json', 'application/json'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+];
+const MIME_TYPES: Record<string, string> = Object.fromEntries(MIME_ROWS);
+
+function mimeFor(file: string): string {
+  return MIME_TYPES[extname(file)] ?? 'application/octet-stream';
+}
 
 // Resolve a request path to a file inside the doc root, or null if it
 // would escape the root (path traversal).
@@ -32,29 +37,30 @@ function resolveFile(requestPath: string): string | null {
   return target;
 }
 
-function mimeFor(file: string): string {
-  return MIME_TYPES[extname(file)] ?? 'application/octet-stream';
+function startServer() {
+  const server = createServer(async (req, res) => {
+    const file = resolveFile(req.url ?? '/');
+    if (file === null) {
+      res.writeHead(403);
+      res.end('forbidden');
+      return;
+    }
+    let body: Buffer;
+    try {
+      body = await readFile(file);
+    } catch {
+      res.writeHead(404);
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'content-type': mimeFor(file) });
+    res.end(body);
+  });
+
+  server.listen(listenPort, () => {
+    console.log(`Solara Bay at http://localhost:${listenPort}/`);
+  });
+  return server;
 }
 
-const server = createServer(async (req, res) => {
-  const file = resolveFile(req.url ?? '/');
-  if (file === null) {
-    res.writeHead(403);
-    res.end('forbidden');
-    return;
-  }
-  let body: Buffer;
-  try {
-    body = await readFile(file);
-  } catch {
-    res.writeHead(404);
-    res.end('not found');
-    return;
-  }
-  res.writeHead(200, { 'content-type': mimeFor(file) });
-  res.end(body);
-});
-
-server.listen(listenPort, () => {
-  console.log(`Solara Bay at http://localhost:${listenPort}/`);
-});
+startServer();

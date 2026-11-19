@@ -36,16 +36,13 @@
     display: flex; justify-content: space-between;
     font-size: 13px; font-weight: bold;
   }
-  #health-bar {
-    width: 200px; height: 12px; margin-top: 6px;
-    background: rgba(255,255,255,0.18); border-radius: 6px; overflow: hidden;
+  #health-bar, #car-health-bar {
+    width: 200px; background: rgba(255,255,255,0.18);
+    border-radius: 6px; overflow: hidden;
   }
-  #health-fill { height: 100%; width: 100%; background: #37c978; transition: width 0.2s; }
-  #car-health-bar {
-    width: 200px; height: 8px; margin-top: 5px; display: none;
-    background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden;
-  }
-  #car-health-fill { height: 100%; width: 100%; background: #37c978; transition: width 0.2s; }
+  #health-bar { height: 12px; margin-top: 6px; }
+  #health-fill, #car-health-fill { height: 100%; width: 100%; background: #37c978; transition: width 0.2s; }
+  #car-health-bar { height: 8px; margin-top: 5px; display: none; border-radius: 4px; }
   #car-health-label { font-size: 11px; color: #9aa4ae; margin-top: 2px; }
   #cash-text { font-size: 20px; font-weight: bold; color: #7ee787; margin-top: 4px; }
   #stars { font-size: 22px; letter-spacing: 3px; color: #5a636e; margin-top: 2px; }
@@ -68,21 +65,22 @@
   #speed { font-size: 22px; font-weight: bold; margin-top: 2px; }
 
   /* Centre overlays: prompt, dialogue, toasts, crosshair. */
+  #prompt, #dialogue, #toasts {
+    position: absolute; left: 50%; transform: translateX(-50%);
+  }
   #prompt {
-    position: absolute; bottom: 96px; left: 50%; transform: translateX(-50%);
-    display: none; padding: 8px 16px; border-radius: 6px;
+    bottom: 96px; display: none; padding: 8px 16px; border-radius: 6px;
     font-size: 15px; font-weight: bold; background: rgba(8,14,20,0.7);
   }
   #dialogue {
-    position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
-    display: none; width: 560px; max-width: 86vw; padding: 12px 16px; border-radius: 6px;
+    bottom: 150px; display: none; width: 560px; max-width: 86vw;
+    padding: 12px 16px; border-radius: 6px;
     background: rgba(8,14,20,0.82); border-left: 4px solid #ffd23c;
     font-size: 15px; line-height: 1.45;
   }
   #dialogue small { display: block; margin-top: 6px; color: #9aa4ae; font-size: 11px; }
   #toasts {
-    position: absolute; top: 150px; left: 50%; transform: translateX(-50%);
-    display: flex; flex-direction: column; gap: 6px; align-items: center;
+    top: 150px; display: flex; flex-direction: column; gap: 6px; align-items: center;
   }
   .toast {
     padding: 7px 14px; border-radius: 6px; white-space: nowrap;
@@ -158,8 +156,9 @@
 
 <div id="screen-start" class="screen">
   <h1 id="start-title">SOLARA BAY</h1>
-  <p>An open-world crime game. You are Marlo Vance, driver-for-hire in a sun-soaked
-     coastal city. Six jobs for your fixer Rico Salas — steal, run, deliver, settle, score, and one last job.</p>
+  <p>An open-world crime game. You are Marlo Vance, driver-for-hire in a
+     sun-soaked coastal city. Six jobs for your fixer Rico Salas — steal,
+     run, deliver, settle, score, and one last job.</p>
   <p class="sub" id="start-sub">Six jobs. One city. No rules but Rico&rsquo;s.</p>
   <button id="btn-new">NEW GAME</button>
   <button id="btn-continue" class="secondary" style="display:none">CONTINUE</button>
@@ -186,8 +185,8 @@
 
 <div id="screen-win" class="screen">
   <h2>THE BIG SCORE</h2>
-  <p>Meridian Bank is lighter, the Vipers are finished, and Rico is already counting.
-     Solara Bay is yours now, Marlo.</p>
+  <p>Meridian Bank is lighter, the Vipers are finished, and Rico is already
+     counting. Solara Bay is yours now, Marlo.</p>
   <p class="sub">Total take: <b id="win-cash">$0</b></p>
   <button id="btn-freeroam">KEEP EXPLORING — FREE ROAM</button>
   <button id="btn-playagain" class="secondary">PLAY AGAIN</button>

@@ -14,7 +14,7 @@ import { damagePlayer } from './player.js';
 import { damageCar } from './vehicles.js';
 import { spawnMuzzleFlash } from './effects.js';
 
-// [weapon, damage, reach, cooldown]
+// Weapons, as [name, damage, reach, cooldown] rows.
 const WEAPON_ROWS = [
   ['fists', 25, 2.4, 0.4],
   ['pistol', 34, 70, 0.25],
@@ -23,28 +23,29 @@ const WEAPONS = Object.fromEntries(
   WEAPON_ROWS.map(([name, damage, reach, cooldown]) => [name, { damage, reach, cooldown }])
 );
 
-// Viper tuning, in one place.
-const VIPER = {
-  health: 100,
-  advance: 5.5,
-  shootRange: 40,
-  noticeRange: 45,
-  standoff: 15,
-  backoffRange: 6,
-  strafeSpeed: 3,
-  retreatSpeed: 3.5,
-  hitChance: 0.25,
-  hitDamage: 6,
-};
+// Viper tuning, as [key, value] rows.
+const VIPER_ROWS = [
+  ['health', 100],
+  ['advance', 5.5],
+  ['shootRange', 40],
+  ['noticeRange', 45],
+  ['standoff', 15],
+  ['backoffRange', 6],
+  ['strafeSpeed', 3],
+  ['retreatSpeed', 3.5],
+  ['hitChance', 0.25],
+  ['hitDamage', 6],
+];
+const VIPER = Object.fromEntries(VIPER_ROWS);
 const TRACER_LIFE = 0.09;
 
-export function initCombat(G) {
+export function initCombat(game) {
   const THREE = window.THREE;
-  G.enemies = [];
-  G.tracers = [];
+  game.enemies = [];
+  game.tracers = [];
   // One material shared by every tracer line.
-  G.tracerMat = new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 });
-  G.raycaster = new THREE.Raycaster();
+  game.tracerMat = new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 });
+  game.raycaster = new THREE.Raycaster();
 }
 
 // A Viper: crimson shirt, dark headband, a pistol in hand.
@@ -53,17 +54,17 @@ function makeViperMesh(THREE, x, z) {
   const crimson = new THREE.MeshLambertMaterial({ color: 0x8e1f2f });
   const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a4a });
   const dark = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
-  // Body pieces as {shape, skin, at:[x,y,z]}.
-  const bodyPlan = [
-    { shape: new THREE.CylinderGeometry(0.42, 0.5, 1.05, 10), skin: crimson, at: [0, 1.05, 0] },
-    { shape: new THREE.SphereGeometry(0.3, 12, 10), skin, at: [0, 1.85, 0] },
-    { shape: new THREE.CylinderGeometry(0.31, 0.31, 0.1, 12), skin: dark, at: [0, 1.98, 0] },
-    { shape: new THREE.BoxGeometry(0.09, 0.14, 0.5), skin: dark, at: [0.3, 1.25, 0.5] },
+  // Body pieces as [shape, skin, x, y, z] rows.
+  const bodyRows = [
+    [new THREE.CylinderGeometry(0.42, 0.5, 1.05, 10), crimson, 0, 1.05, 0],
+    [new THREE.SphereGeometry(0.3, 12, 10), skin, 0, 1.85, 0],
+    [new THREE.CylinderGeometry(0.31, 0.31, 0.1, 12), dark, 0, 1.98, 0],
+    [new THREE.BoxGeometry(0.09, 0.14, 0.5), dark, 0.3, 1.25, 0.5],
   ];
   const built = [];
-  for (const piece of bodyPlan) {
-    const mesh = new THREE.Mesh(piece.shape, piece.skin);
-    mesh.position.set(piece.at[0], piece.at[1], piece.at[2]);
+  for (const [shape, mat, px, py, pz] of bodyRows) {
+    const mesh = new THREE.Mesh(shape, mat);
+    mesh.position.set(px, py, pz);
     group.add(mesh);
     built.push(mesh);
   }
@@ -78,10 +79,10 @@ function makeViperMesh(THREE, x, z) {
   return { group, body: built[0], legL: shinL, legR: shinR, gun: built[3] };
 }
 
-export function spawnEnemy(G, x, z, missionTag) {
+export function spawnEnemy(game, x, z, missionTag) {
   const THREE = window.THREE;
   const parts = makeViperMesh(THREE, x, z);
-  G.scene.add(parts.group);
+  game.scene.add(parts.group);
   const viper = {
     ...parts,
     pos: parts.group.position,
@@ -94,33 +95,33 @@ export function spawnEnemy(G, x, z, missionTag) {
     dead: false,
     deadTimer: 0,
   };
-  G.enemies.push(viper);
+  game.enemies.push(viper);
   return viper;
 }
 
-export function livingEnemies(G) {
-  return G.enemies.filter((e) => !e.dead);
+export function livingEnemies(game) {
+  return game.enemies.filter((e) => !e.dead);
 }
 
-function drawTracer(G, from, to) {
+function drawTracer(game, from, to) {
   const THREE = window.THREE;
   const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
-  const line = new THREE.Line(geo, G.tracerMat);
-  G.scene.add(line);
-  G.tracers.push({ line, life: TRACER_LIFE });
+  const line = new THREE.Line(geo, game.tracerMat);
+  game.scene.add(line);
+  game.tracers.push({ line, life: TRACER_LIFE });
 }
 
-function muzzlePoint(G) {
-  const p = G.player;
+function muzzlePoint(game) {
+  const p = game.player;
   const fwd = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
   return new THREE.Vector3(p.pos.x + fwd.x * 0.8, 1.35, p.pos.z + fwd.z * 0.8);
 }
 
 // Nearest living enemy or officer in front of Marlo, inside fist reach.
-function punchTarget(G) {
-  const p = G.player;
+function punchTarget(game) {
+  const p = game.player;
   const reach = WEAPONS.fists.reach;
-  const marks = [...livingEnemies(G), ...G.officers];
+  const marks = [...livingEnemies(game), ...game.officers];
   let mark = null;
   let markD = reach;
   for (const t of marks) {
@@ -136,15 +137,15 @@ function punchTarget(G) {
   return mark;
 }
 
-function throwPunch(G) {
-  const p = G.player;
+function throwPunch(game) {
+  const p = game.player;
   if (p.punchCooldown > 0) return;
   p.punchCooldown = WEAPONS.fists.cooldown;
-  if (G.audio) G.audio.punch();
-  const mark = punchTarget(G);
+  if (game.audio) game.audio.punch();
+  const mark = punchTarget(game);
   if (!mark) return;
   if (mark.health !== undefined) {
-    damageEnemy(G, mark, WEAPONS.fists.damage);
+    damageEnemy(game, mark, WEAPONS.fists.damage);
     return;
   }
   // An officer: a punch shoves them back two units.
@@ -154,13 +155,13 @@ function throwPunch(G) {
 
 // Every car the pistol can hit: parked, traffic and police cars, except
 // Marlo's own ride and any wreck.
-function driveByCarTargets(G, ownCar) {
-  const groups = [];
+function driveByCarTargets(game, ownCar) {
   const all = [
-    ...(G.parkedCars || []),
-    ...(G.trafficCars || []),
-    ...(G.policeCars || []),
+    ...(game.parkedCars || []),
+    ...(game.trafficCars || []),
+    ...(game.policeCars || []),
   ];
+  const groups = [];
   for (const car of all) {
     if (car === ownCar || car.wrecked || car.dead) continue;
     groups.push(car.group);
@@ -179,66 +180,74 @@ function carFromObject(obj) {
   return null;
 }
 
-function firePistol(G) {
+// Where a pistol shot starts and which way it goes: from Marlo's
+// shoulder along his facing — or, from the driver's seat, from the car
+// along the camera. The crosshair sits on whatever he faces.
+function aimShot(game) {
   const THREE = window.THREE;
-  const p = G.player;
-  if (p.shootCooldown > 0) return;
-  p.shootCooldown = WEAPONS.pistol.cooldown;
-  if (G.audio) G.audio.shot();
-  scatterPeds(G, p.pos.x, p.pos.z, 25);
-  // Aim from Marlo's shoulder along his facing — or, from the driver's
-  // seat, along the camera. The crosshair sits on whatever he faces.
+  const p = game.player;
   const driving = p.inCar && p.car;
   const origin = driving
     ? new THREE.Vector3(p.car.pos.x, 1.35, p.car.pos.z)
     : new THREE.Vector3(p.pos.x, 1.35, p.pos.z);
-  const aimYaw = driving ? G.camYaw : p.yaw;
+  const aimYaw = driving ? game.camYaw : p.yaw;
   const dir = new THREE.Vector3(Math.sin(aimYaw), 0, Math.cos(aimYaw));
-  G.raycaster.set(origin, dir);
-  G.raycaster.far = WEAPONS.pistol.reach;
+  return { origin, dir, driving };
+}
+
+function firePistol(game) {
+  const THREE = window.THREE;
+  const p = game.player;
+  if (p.shootCooldown > 0) return;
+  p.shootCooldown = WEAPONS.pistol.cooldown;
+  if (game.audio) game.audio.shot();
+  scatterPeds(game, p.pos.x, p.pos.z, 25);
+  const { origin, dir, driving } = aimShot(game);
+  game.raycaster.set(origin, dir);
+  game.raycaster.far = WEAPONS.pistol.reach;
   const bodies = [];
-  for (const e of livingEnemies(G)) bodies.push(e.body);
-  const targets = [...bodies, ...driveByCarTargets(G, driving ? p.car : null)];
-  const hits = G.raycaster.intersectObjects(targets, true);
+  for (const e of livingEnemies(game)) bodies.push(e.body);
+  const targets = [...bodies, ...driveByCarTargets(game, driving ? p.car : null)];
+  const hits = game.raycaster.intersectObjects(targets, true);
   let end;
   if (hits.length > 0) {
     const hit = hits[0];
     end = hit.point.clone();
-    const viper = livingEnemies(G).find((e) => e.body === hit.object);
+    const viper = livingEnemies(game).find((e) => e.body === hit.object);
     if (viper) {
-      damageEnemy(G, viper, WEAPONS.pistol.damage);
+      damageEnemy(game, viper, WEAPONS.pistol.damage);
     } else {
       // A car body: the shot dents it, and enough dents wreck it.
       const car = carFromObject(hit.object);
-      if (car && car !== p.car) damageCar(G, car, WEAPONS.pistol.damage);
+      if (car && car !== p.car) damageCar(game, car, WEAPONS.pistol.damage);
     }
   } else {
     end = origin.clone().add(dir.multiplyScalar(WEAPONS.pistol.reach));
   }
   const muzzle = driving
     ? new THREE.Vector3(p.car.pos.x + dir.x * 1.2, 1.35, p.car.pos.z + dir.z * 1.2)
-    : muzzlePoint(G);
-  spawnMuzzleFlash(G, muzzle.x, muzzle.y, muzzle.z, dir.x, dir.z);
-  drawTracer(G, muzzle, end);
+    : muzzlePoint(game);
+  spawnMuzzleFlash(game, muzzle.x, muzzle.y, muzzle.z, dir.x, dir.z);
+  drawTracer(game, muzzle, end);
 }
 
 // Marlo attacks with fists or the pistol. From the driver's seat only
 // the pistol fires — a drive-by, aimed along the camera.
-export function playerAttack(G) {
-  const p = G.player;
-  if (G.state !== 'playing' || p.health <= 0) return;
+export function playerAttack(game) {
+  const p = game.player;
+  if (game.state !== 'playing' || p.health <= 0) return;
   if (p.inCar) {
-    if (p.weapon === 'pistol' && p.hasPistol) firePistol(G);
+    if (p.weapon === 'pistol' && p.hasPistol) firePistol(game);
     return;
   }
   if (p.weapon === 'fists') {
-    throwPunch(G);
+    throwPunch(game);
     return;
   }
-  if (p.weapon === 'pistol' && p.hasPistol) firePistol(G);
+  if (p.weapon === 'pistol' && p.hasPistol) firePistol(game);
 }
 
-export function damageEnemy(G, enemy, amount) {
+export function damageEnemy(game, enemy, amount) {
   if (enemy.dead) return;
   enemy.health -= amount;
   if (enemy.health > 0) {
@@ -251,7 +260,7 @@ export function damageEnemy(G, enemy, amount) {
   enemy.dead = true;
   enemy.deadTimer = 1.2;
   enemy.group.rotation.x = -Math.PI / 2;
-  if (G.onEnemyKilled) G.onEnemyKilled(enemy);
+  if (game.onEnemyKilled) game.onEnemyKilled(enemy);
 }
 
 // One leg swing step for a walking Viper.
@@ -294,40 +303,45 @@ function strafeViper(e, dx, dz, gap, dt) {
   swingLegs(e, dt);
 }
 
-function viperShoot(G, e) {
+function viperShoot(game, e) {
   const THREE = window.THREE;
-  const p = G.player;
+  const p = game.player;
   e.shootCooldown = 1.1 + Math.random() * 0.7;
-  if (G.audio) G.audio.enemyShot();
+  if (game.audio) game.audio.enemyShot();
   const from = new THREE.Vector3(e.pos.x, 1.4, e.pos.z);
   const to = new THREE.Vector3(p.pos.x, 1.3, p.pos.z);
-  drawTracer(G, from, to);
+  drawTracer(game, from, to);
   if (Math.random() < VIPER.hitChance) {
-    damagePlayer(G, VIPER.hitDamage, 'shot by a Viper');
+    damagePlayer(game, VIPER.hitDamage, 'shot by a Viper');
   }
 }
 
 // Fade out and remove tracers whose life ran out.
-function fadeTracers(G, dt) {
-  for (const t of G.tracers) {
+function fadeTracers(game, dt) {
+  for (const t of game.tracers) {
     t.life -= dt;
     if (t.life <= 0) {
-      G.scene.remove(t.line);
+      game.scene.remove(t.line);
       t.line.geometry.dispose();
     }
   }
-  G.tracers = G.tracers.filter((t) => t.life > 0);
+  game.tracers = game.tracers.filter((t) => t.life > 0);
 }
 
-export function updateEnemies(G, dt) {
-  const p = G.player;
-  for (const e of G.enemies) {
+// One dead Viper's fade-out: it lies flat for 1.2 s, then leaves.
+function clearDeadViper(game, e, dt) {
+  e.deadTimer -= dt;
+  if (e.deadTimer <= 0) {
+    game.scene.remove(e.group);
+    game.enemies = game.enemies.filter((x) => x !== e);
+  }
+}
+
+export function updateEnemies(game, dt) {
+  const p = game.player;
+  for (const e of game.enemies) {
     if (e.dead) {
-      e.deadTimer -= dt;
-      if (e.deadTimer <= 0) {
-        G.scene.remove(e.group);
-        G.enemies = G.enemies.filter((x) => x !== e);
-      }
+      clearDeadViper(game, e, dt);
       continue;
     }
     const dx = p.pos.x - e.pos.x;
@@ -341,11 +355,11 @@ export function updateEnemies(G, dt) {
       e.aimError = Math.max(0.12, e.aimError - dt * 0.4);
       continue;
     }
-    if (gap >= VIPER.noticeRange || p.health <= 0 || G.state !== 'playing') continue;
+    if (gap >= VIPER.noticeRange || p.health <= 0 || game.state !== 'playing') continue;
     if (gap > VIPER.standoff) advanceViper(e, dx, dz, gap, dt);
     else strafeViper(e, dx, dz, gap, dt);
     e.group.rotation.y = Math.atan2(dx, dz);
-    if (gap < VIPER.shootRange && e.shootCooldown <= 0) viperShoot(G, e);
+    if (gap < VIPER.shootRange && e.shootCooldown <= 0) viperShoot(game, e);
   }
-  fadeTracers(G, dt);
+  fadeTracers(game, dt);
 }

@@ -12,65 +12,89 @@ function round1(v) {
   return Math.round(v * 10) / 10;
 }
 
-function nearestGap(list, p) {
+// Nearest entry of a list to the player, or null when the list is empty.
+function nearestTo(list, p) {
   if (!list.length) return null;
-  return round1(Math.min(...list.map((u) => Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z))));
+  let best = list[0];
+  let bestD = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+  for (const u of list.slice(1)) {
+    const d = Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z);
+    if (d < bestD) {
+      bestD = d;
+      best = u;
+    }
+  }
+  return best;
+}
+
+function nearestGap(list, p) {
+  const best = nearestTo(list, p);
+  if (!best) return null;
+  return round1(Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z));
 }
 
 // The moving parts of the snapshot: position, speed, counts, distances.
-function snapshotDynamic(G, p) {
+function snapshotMoving(game, p) {
   return {
     x: round1(p.pos.x),
     z: round1(p.pos.z),
     speedKmh: Math.round((p.inCar && p.car ? Math.abs(p.car.speed) : p.speed) * 3.6),
-    enemies: G.enemies.filter((e) => !e.dead).length,
-    policeCars: G.policeCars.length,
-    officers: G.officers.length,
-    wantedTimer: round1(G.wantedTimer ?? 0),
-    nearestPolice: nearestGap(G.policeCars, p),
-    nearestOfficer: nearestGap(G.officers, p),
+    enemies: game.enemies.filter((e) => !e.dead).length,
+    policeCars: game.policeCars.length,
+    officers: game.officers.length,
+    wantedTimer: round1(game.wantedTimer ?? 0),
+    nearestPolice: nearestGap(game.policeCars, p),
+    nearestOfficer: nearestGap(game.officers, p),
     carHealth: p.inCar && p.car ? Math.round(p.car.health) : null,
     // Parked cars still standing (not wrecked) — the drive-by test
     // needs a live target count.
-    parkedCars: (G.parkedCars || []).filter((c) => !c.wrecked).length,
+    parkedCars: (game.parkedCars || []).filter((c) => !c.wrecked).length,
     // Running tally of Vipers Marlo has taken down this session.
-    kills: G.kills || 0,
-    elapsed: round1(G.elapsed ?? 0),
+    kills: game.kills || 0,
+    elapsed: round1(game.elapsed ?? 0),
   };
 }
 
-export function initDebug(G) {
+// Point Marlo (and the camera) at a target position.
+function facePoint(game, p, x, z) {
+  const yaw = Math.atan2(x - p.pos.x, z - p.pos.z);
+  p.yaw = yaw;
+  p.group.rotation.y = yaw;
+  game.camYaw = yaw;
+}
+
+export function initDebug(game) {
   const api = {
     // A JSON-safe snapshot of the game state.
     state() {
-      const p = G.player;
+      const p = game.player;
       return {
-        state: G.state,
-        mission: G.mission.index,
-        missionName: p && G.mission ? G.mission.objective : '',
-        stage: G.mission.stage,
+        state: game.state,
+        mission: game.mission.index,
+        missionName: p && game.mission ? game.mission.objective : '',
+        stage: game.mission.stage,
         cash: p.cash,
         health: p.health,
-        wanted: G.wanted,
+        wanted: game.wanted,
         inCar: p.inCar,
         weapon: p.weapon,
         hasPistol: p.hasPistol,
-        radio: G.audio ? G.audio.radioLabel() : 'RADIO OFF',
-        mapZoom: G.minimapZoom ?? 1,
-        ...snapshotDynamic(G, p),
+        radio: game.audio ? game.audio.radioLabel() : 'RADIO OFF',
+        mapZoom: game.minimapZoom ?? 1,
+        ...snapshotMoving(game, p),
       };
     },
 
     // Start a new game from the menu (as the New Game button does).
     start() {
-      if (G.startNewGame) G.startNewGame();
+      if (game.startNewGame) game.startNewGame();
       return api.state();
     },
 
     // Teleport Marlo (on foot, or with the car when driving).
     // Optional heading (radians) points the car / Marlo where you want.
     teleport(x, z, heading) {
-      const p = G.player;
+      const p = game.player;
       const hasHeading = heading !== undefined;
       if (p.inCar && p.car) {
         p.car.pos.x = x;
@@ -83,58 +107,44 @@ export function initDebug(G) {
       p.pos.x = x;
       p.pos.z = z;
       p.group.position.set(x, 0, z);
-      if (hasHeading) {
-        p.yaw = heading;
-        p.group.rotation.y = heading;
-        G.camYaw = heading;
-      }
+      if (hasHeading) facePoint(game, p, x + Math.sin(heading), z + Math.cos(heading));
       return api.state();
     },
 
     // Put Marlo next to the current mission marker.
     teleportToMarker() {
-      const t = G.mission.target;
+      const t = game.mission.target;
       if (!t) return api.state();
       return api.teleport(t.x - 4, t.z + 4);
     },
 
     setWanted(n) {
-      setWanted(G, n);
+      setWanted(game, n);
       return api.state();
     },
 
     setMission(i) {
-      if (i >= 0 && i < 6) startMission(G, i);
+      if (i >= 0 && i < 6) startMission(game, i);
       return api.state();
     },
 
     // Damage the nearest parked car (play-test hook for the car damage
     // system). Returns the car's health after the hit, or null.
     damageNearestCar(amount) {
-      const cars = (G.parkedCars || []).filter((c) => !c.wrecked && !c.dead);
-      if (!cars.length) return null;
-      const p = G.player;
-      const car = cars.reduce((best, c) => {
-        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
-        const bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
-        return d < bd ? c : best;
-      });
-      damageCar(G, car, amount);
+      const cars = (game.parkedCars || []).filter((c) => !c.wrecked && !c.dead);
+      const car = nearestTo(cars, game.player);
+      if (!car) return null;
+      damageCar(game, car, amount);
       return car.health;
     },
 
     // Wreck the nearest parked car outright (play-test hook for the
     // explosion, ejection and respawn paths).
     wreckNearestCar() {
-      const cars = (G.parkedCars || []).filter((c) => !c.wrecked && !c.dead);
-      if (!cars.length) return null;
-      const p = G.player;
-      const car = cars.reduce((best, c) => {
-        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
-        const bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
-        return d < bd ? c : best;
-      });
-      damageCar(G, car, 999);
+      const cars = (game.parkedCars || []).filter((c) => !c.wrecked && !c.dead);
+      const car = nearestTo(cars, game.player);
+      if (!car) return null;
+      damageCar(game, car, 999);
       return car.wrecked;
     },
 
@@ -142,84 +152,60 @@ export function initDebug(G) {
     // police / traffic / parked car when he is on foot. Returns the
     // full state (the test reads carHealth from it).
     damageCar(amount) {
-      const p = G.player;
+      const p = game.player;
       let car = null;
       if (p.inCar && p.car) {
         car = p.car;
       } else {
-        const cars = [...(G.policeCars || []), ...(G.trafficCars || []), ...(G.parkedCars || [])].filter(
-          (c) => !c.wrecked && !c.dead
-        );
-        let bestD = Infinity;
-        for (const c of cars) {
-          const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
-          if (d < bestD) {
-            bestD = d;
-            car = c;
-          }
-        }
+        const pool = [...(game.policeCars || []), ...(game.trafficCars || []), ...(game.parkedCars || [])]
+          .filter((c) => !c.wrecked && !c.dead);
+        car = nearestTo(pool, p);
       }
-      if (car) damageCar(G, car, amount);
+      if (car) damageCar(game, car, amount);
       return api.state();
     },
 
     // Repair the car Marlo is driving back to full health.
     repairCar() {
-      const p = G.player;
-      if (p.inCar && p.car) repairCar(G, p.car);
+      const p = game.player;
+      if (p.inCar && p.car) repairCar(game, p.car);
       return api.state();
     },
 
     // Point the camera at the nearest parked car that is not Marlo's
     // own and not wrecked, so a drive-by shot has a parked target.
     faceNearestParkedCar() {
-      const p = G.player;
-      const cars = (G.parkedCars || []).filter((c) => !c.wrecked && !c.dead && c !== p.car);
-      if (!cars.length) return api.state();
-      const mark = cars.reduce((best, c) => {
-        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
-        const bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
-        return d < bd ? c : best;
-      });
-      const yaw = Math.atan2(mark.pos.x - p.pos.x, mark.pos.z - p.pos.z);
-      p.yaw = yaw;
-      p.group.rotation.y = yaw;
-      // Point the camera at the car too.
-      G.camYaw = yaw;
+      const p = game.player;
+      const cars = (game.parkedCars || []).filter((c) => !c.wrecked && !c.dead && c !== p.car);
+      const mark = nearestTo(cars, p);
+      if (!mark) return api.state();
+      facePoint(game, p, mark.pos.x, mark.pos.z);
       return api.state();
     },
 
     givePistol() {
-      G.player.hasPistol = true;
-      G.player.weapon = 'pistol';
+      game.player.hasPistol = true;
+      game.player.weapon = 'pistol';
       return api.state();
     },
 
     addCash(n) {
-      G.player.cash += n;
+      game.player.cash += n;
       return api.state();
     },
 
     heal() {
-      G.player.health = 100;
+      game.player.health = 100;
       return api.state();
     },
 
     // Face the nearest living enemy so the pistol raycast can hit it.
     faceNearestEnemy() {
-      const p = G.player;
-      const alive = G.enemies.filter((e) => !e.dead);
-      if (alive.length === 0) return api.state();
-      const mark = alive.reduce((best, e) => {
-        const gap = Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z);
-        const bestGap = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
-        return gap < bestGap ? e : best;
-      });
-      const yaw = Math.atan2(mark.pos.x - p.pos.x, mark.pos.z - p.pos.z);
-      p.yaw = yaw;
-      p.group.rotation.y = yaw;
-      // Point the camera at the enemy too.
-      G.camYaw = yaw;
+      const p = game.player;
+      const alive = game.enemies.filter((e) => !e.dead);
+      const mark = nearestTo(alive, p);
+      if (!mark) return api.state();
+      facePoint(game, p, mark.pos.x, mark.pos.z);
       return api.state();
     },
 
@@ -227,23 +213,12 @@ export function initDebug(G) {
     // drive-by shot has something to hit. Traffic can nudge the car,
     // so re-aim before every shot.
     aimAtNearestCar() {
-      const p = G.player;
-      const cars = [...(G.parkedCars || []), ...(G.trafficCars || [])];
-      let best = null;
-      let bestD = Infinity;
-      for (const car of cars) {
-        if (car.wrecked || car.dead) continue;
-        const d = Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z);
-        if (d < bestD) {
-          bestD = d;
-          best = car;
-        }
-      }
+      const p = game.player;
+      const pool = [...(game.parkedCars || []), ...(game.trafficCars || [])]
+        .filter((c) => !c.wrecked && !c.dead);
+      const best = nearestTo(pool, p);
       if (!best) return api.state();
-      const yaw = Math.atan2(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
-      p.yaw = yaw;
-      p.group.rotation.y = yaw;
-      G.camYaw = yaw;
+      facePoint(game, p, best.pos.x, best.pos.z);
       return api.state();
     },
 
@@ -255,18 +230,18 @@ export function initDebug(G) {
     },
 
     click() {
-      if (G.onClick) G.onClick();
+      if (game.onClick) game.onClick();
       return api.state();
     },
 
     // How far the current objective is, in metres.
     objectiveDistance() {
-      const t = G.mission.target;
+      const t = game.mission.target;
       if (!t) return null;
-      return Math.round(Math.hypot(G.player.pos.x - t.x, G.player.pos.z - t.z));
+      return Math.round(Math.hypot(game.player.pos.x - t.x, game.player.pos.z - t.z));
     },
   };
   window.__solara = api;
-  G.debug = api;
+  game.debug = api;
   return api;
 }

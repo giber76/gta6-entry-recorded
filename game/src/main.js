@@ -1,6 +1,8 @@
-// main.js — Solara Bay: game loop, state machine and wiring.
-// States: menu → playing ⇄ paused, busted (respawn), won (free roam).
-// Per-frame updaters run in a fixed order: car, player, police, traffic, enemies, missions.
+// main.js — Solara Bay: the game loop, the state machine and the wiring
+// between every module. States: menu → playing ⇄ paused, busted
+// (respawn), won (free roam). Per-frame updaters run in a fixed order:
+// player, car, traffic, pedestrians, police, enemies, missions, effects,
+// camera, HUD.
 
 import { initCity } from './city.js';
 import { createPlayer, updatePlayer, updateCamera, damagePlayer } from './player.js';
@@ -19,10 +21,11 @@ import { saveGame, loadSave, hasSave, clearSave } from './save.js';
 import { initDebug } from './debug.js';
 
 const THREE = window.THREE;
-const MISSION_NAMES = ['Wheels for Rico', 'Lose the Heat', 'The Package', 'Viper Nest', 'The Big Score', 'The Last Job'];
+const MISSION_NAMES = MISSIONS.map((job) => job.name);
 const ZOOM_LEVELS = [1, 2, 4];
 
-const G = {
+// The shared game object every module reads and writes.
+const game = {
   state: 'menu',
   elapsed: 0,
   camYaw: Math.PI,
@@ -32,7 +35,7 @@ const G = {
 };
 
 // --- renderer / scene -------------------------------------------------------
-function buildRenderer() {
+function makeRenderer() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -50,127 +53,126 @@ function buildRenderer() {
   return { renderer, scene, camera };
 }
 
-const { renderer, scene, camera } = buildRenderer();
-G.renderer = renderer;
-G.scene = scene;
-G.camera = camera;
+// --- world setup ------------------------------------------------------------
+function wireWorld() {
+  const { renderer, scene, camera } = makeRenderer();
+  game.renderer = renderer;
+  game.scene = scene;
+  game.camera = camera;
+  game.audio = createAudio();
+  initInput(game);
+  initCity(game);
+  initEffects(game);
+  createPlayer(game);
+  spawnParkedCars(game);
+  spawnTraffic(game);
+  spawnPedestrians(game);
+  initPolice(game);
+  initCombat(game);
+  createHud(game);
+  game.minimap = createMinimap(game);
+  initMissions(game);
+  initDebug(game);
+  game.saveGame = () => saveGame(game);
+}
 
-// --- modules ----------------------------------------------------------------
-G.audio = createAudio();
-initInput(G);
-initCity(G);
-initEffects(G);
-createPlayer(G);
-spawnParkedCars(G);
-spawnTraffic(G);
-spawnPedestrians(G);
-initPolice(G);
-initCombat(G);
-createHud(G);
-G.minimap = createMinimap(G);
-initMissions(G);
-initDebug(G);
-
-G.saveGame = () => saveGame(G);
+wireWorld();
 
 // --- game events ------------------------------------------------------------
 // ENTER advances dialogue; P/ESC pauses; M shows the mission; Q swaps weapon.
 // R cycles the radio station; Z/X zoom the minimap in and out.
-G.onEnter = () => {
-  if (G.state === 'playing') advanceDialogue(G);
+game.onEnter = () => {
+  if (game.state === 'playing') advanceDialogue(game);
 };
 
-G.onPauseKey = () => {
-  const playing = G.state === 'playing';
-  const paused = G.state === 'paused';
+game.onPauseKey = () => {
+  const playing = game.state === 'playing';
+  const paused = game.state === 'paused';
   if (!playing && !paused) return;
-  G.state = playing ? 'paused' : 'playing';
-  G.hud.showScreen(playing ? 'pause' : null);
-  if (playing) saveGame(G);
+  game.state = playing ? 'paused' : 'playing';
+  game.hud.showScreen(playing ? 'pause' : null);
+  if (playing) saveGame(game);
 };
 
-G.onMissionKey = () => {
-  if (G.state !== 'playing') return;
-  const m = G.mission;
-  G.hud.toast(`Mission ${m.index + 1}/${MISSIONS.length}: ${MISSION_NAMES[m.index]} — ${m.objective}`);
+game.onMissionKey = () => {
+  if (game.state !== 'playing') return;
+  const m = game.mission;
+  game.hud.toast(`Mission ${m.index + 1}/${MISSIONS.length}: ${MISSION_NAMES[m.index]} — ${m.objective}`);
 };
 
-G.onWeaponKey = () => {
-  const p = G.player;
-  if (G.state !== 'playing' || p.inCar || !p.hasPistol) {
-    if (G.state === 'playing' && !p.inCar) p.weapon = 'fists';
+game.onWeaponKey = () => {
+  const p = game.player;
+  if (game.state !== 'playing' || p.inCar || !p.hasPistol) {
+    if (game.state === 'playing' && !p.inCar) p.weapon = 'fists';
     return;
   }
   p.weapon = p.weapon === 'fists' ? 'pistol' : 'fists';
-  G.hud.toast(p.weapon === 'pistol' ? 'Pistol out' : 'Fists out');
+  game.hud.toast(p.weapon === 'pistol' ? 'Pistol out' : 'Fists out');
 };
 
-G.onRadioKey = () => {
-  if (G.state !== 'playing' || !G.audio) return;
-  const name = G.audio.nextStation();
-  G.hud.toast(`Radio — ${name}`);
+game.onRadioKey = () => {
+  if (game.state !== 'playing' || !game.audio) return;
+  const name = game.audio.nextStation();
+  game.hud.toast(`Radio — ${name}`);
 };
 
-G.onZoomIn = () => {
-  if (G.state !== 'playing') return;
-  const i = ZOOM_LEVELS.indexOf(G.minimapZoom ?? 1);
-  G.minimapZoom = ZOOM_LEVELS[(i + 1) % ZOOM_LEVELS.length];
-  G.hud.toast(`Minimap ${G.minimapZoom}x`);
+function cycleZoom(dir) {
+  if (game.state !== 'playing') return;
+  const i = ZOOM_LEVELS.indexOf(game.minimapZoom ?? 1);
+  const n = ZOOM_LEVELS.length;
+  game.minimapZoom = ZOOM_LEVELS[((i + dir) % n + n) % n];
+  game.hud.toast(`Minimap ${game.minimapZoom}x`);
+}
+
+game.onZoomIn = () => cycleZoom(1);
+game.onZoomOut = () => cycleZoom(-1);
+
+game.onClick = () => {
+  if (game.state === 'playing') playerAttack(game);
 };
 
-G.onZoomOut = () => {
-  if (G.state !== 'playing') return;
-  const i = ZOOM_LEVELS.indexOf(G.minimapZoom ?? 1);
-  G.minimapZoom = ZOOM_LEVELS[(i + ZOOM_LEVELS.length - 1) % ZOOM_LEVELS.length];
-  G.hud.toast(`Minimap ${G.minimapZoom}x`);
-};
-
-G.onClick = () => {
-  if (G.state === 'playing') playerAttack(G);
-};
-
-G.onCarStolen = (car) => {
-  if (theftWitnessed(G)) {
-    raiseWanted(G, 1, 'car theft witnessed');
+game.onCarStolen = (car) => {
+  if (theftWitnessed(game)) {
+    raiseWanted(game, 1, 'car theft witnessed');
   } else {
-    G.hud.toast('Car stolen — nobody saw');
+    game.hud.toast('Car stolen — nobody saw');
   }
 };
 
-G.onPedHit = () => {
-  raiseWanted(G, 1, 'pedestrian hit');
+game.onPedHit = () => {
+  raiseWanted(game, 1, 'pedestrian hit');
 };
 
-G.onPlayerHitByTraffic = () => {
-  damagePlayer(G, 12, 'hit by traffic');
-  const p = G.player;
+game.onPlayerHitByTraffic = () => {
+  damagePlayer(game, 12, 'hit by traffic');
+  const p = game.player;
   p.pos.x += (Math.random() - 0.5) * 4;
   p.pos.z += (Math.random() - 0.5) * 4;
 };
 
-G.onEnemyKilled = (enemy) => {
+game.onEnemyKilled = (enemy) => {
   // Count the kill and say so: a running tally of Vipers taken down,
   // shown in the debug snapshot for play-tests.
-  G.kills = (G.kills || 0) + 1;
-  G.hud.toast(`Viper down — ${G.kills} taken out`);
-  if (G.audio) G.audio.pickup();
+  game.kills = (game.kills || 0) + 1;
+  game.hud.toast(`Viper down — ${game.kills} taken out`);
+  if (game.audio) game.audio.pickup();
 };
 
-G.onBusted = () => {
-  G.hud.bustedCash.textContent = `$${G.player.cash.toLocaleString('en-US')}`;
-  G.hud.showScreen('busted');
+game.onBusted = () => {
+  game.hud.bustedCash.textContent = `$${game.player.cash.toLocaleString('en-US')}`;
+  game.hud.showScreen('busted');
 };
 
-G.onWin = () => {
-  G.hud.winCash.textContent = `$${G.player.cash.toLocaleString('en-US')}`;
-  G.hud.showScreen('win');
+game.onWin = () => {
+  game.hud.winCash.textContent = `$${game.player.cash.toLocaleString('en-US')}`;
+  game.hud.showScreen('win');
 };
 
 // --- start / continue / respawn --------------------------------------------
 // Shared reset used by new game, continue and respawn: put Marlo back on
 // his feet at the plaza steps with a clean slate.
-function freshMarlo(G, cash, health) {
-  const p = G.player;
+function resetMarlo(game, cash, health) {
+  const p = game.player;
   p.cash = cash;
   p.health = health;
   p.hasPistol = false;
@@ -178,59 +180,59 @@ function freshMarlo(G, cash, health) {
   p.inCar = false;
   p.car = null;
   p.group.visible = true;
-  p.pos.x = G.city.locations.start.x;
-  p.pos.z = G.city.locations.start.z;
+  p.pos.x = game.city.locations.start.x;
+  p.pos.z = game.city.locations.start.z;
   p.group.position.set(p.pos.x, 0, p.pos.z);
-  G.wanted = 0;
-  for (const e of G.enemies) G.scene.remove(e.group);
-  G.enemies = [];
+  game.wanted = 0;
+  for (const e of game.enemies) game.scene.remove(e.group);
+  game.enemies = [];
 }
 
 // Enter play from a menu button: reset, show the game, toast a greeting.
-function beginPlay(toast) {
-  G.state = 'playing';
-  G.hud.showScreen(null);
-  if (toast) G.hud.toast(toast);
+function enterPlay(toast) {
+  game.state = 'playing';
+  game.hud.showScreen(null);
+  if (toast) game.hud.toast(toast);
 }
 
-G.startNewGame = () => {
+game.startNewGame = () => {
   clearSave();
-  freshMarlo(G, 0, 100);
-  initMissions(G);
-  beginPlay('Welcome to Solara Bay — steal the orange coupe');
+  resetMarlo(game, 0, 100);
+  initMissions(game);
+  enterPlay('Welcome to Solara Bay — steal the orange coupe');
 };
 
-G.continueGame = () => {
+game.continueGame = () => {
   const data = loadSave();
   if (!data) return;
-  const p = G.player;
-  freshMarlo(G, data.cash, data.health);
+  const p = game.player;
+  resetMarlo(game, data.cash, data.health);
   p.hasPistol = !!data.hasPistol;
   p.weapon = p.hasPistol ? 'pistol' : 'fists';
   p.pos.x = data.x;
   p.pos.z = data.z;
   p.group.position.set(p.pos.x, 0, p.pos.z);
-  if (G.audio) G.audio.setStation(data.station ?? 0);
+  if (game.audio) game.audio.setStation(data.station ?? 0);
   // Restore the saved minimap zoom as well.
-  if (data.minimapZoom) G.minimapZoom = data.minimapZoom;
-  initMissions(G);
+  if (data.minimapZoom) game.minimapZoom = data.minimapZoom;
+  initMissions(game);
   // Restore the saved mission directly (earlier jobs are already paid).
-  if (data.mission > 0) startMission(G, data.mission);
-  beginPlay('Save loaded — welcome back to Solara Bay');
+  if (data.mission > 0) startMission(game, data.mission);
+  enterPlay('Save loaded — welcome back to Solara Bay');
 };
 
-G.respawnAfterBusted = () => {
-  const p = G.player;
+game.respawnAfterBusted = () => {
+  const p = game.player;
   const cash = Math.max(0, p.cash - 100);
   if (p.inCar && p.car) {
     p.car.isPlayer = false;
   }
-  freshMarlo(G, cash, 100);
-  beginPlay('You were busted — $100 fine, back on the plaza');
+  resetMarlo(game, cash, 100);
+  enterPlay('You were busted — $100 fine, back on the plaza');
 };
 
-G.continueFreeRoam = () => {
-  beginPlay('Free roam — Solara Bay is yours');
+game.continueFreeRoam = () => {
+  enterPlay('Free roam — Solara Bay is yours');
 };
 
 function refreshStartScreen() {
@@ -245,13 +247,13 @@ function refreshStartScreen() {
 // --- menu buttons -----------------------------------------------------------
 function wireButtons() {
   const buttons = [
-    ['btn-new', () => { if (G.audio) G.audio.unlock(); G.startNewGame(); }],
-    ['btn-continue', () => { if (G.audio) G.audio.unlock(); G.continueGame(); }],
-    ['btn-resume', () => { G.state = 'playing'; G.hud.showScreen(null); }],
-    ['btn-quit', () => { saveGame(G); G.state = 'menu'; G.hud.showScreen('start'); refreshStartScreen(); }],
-    ['btn-respawn', () => G.respawnAfterBusted()],
-    ['btn-freeroam', () => G.continueFreeRoam()],
-    ['btn-playagain', () => G.startNewGame()],
+    ['btn-new', () => { if (game.audio) game.audio.unlock(); game.startNewGame(); }],
+    ['btn-continue', () => { if (game.audio) game.audio.unlock(); game.continueGame(); }],
+    ['btn-resume', () => { game.state = 'playing'; game.hud.showScreen(null); }],
+    ['btn-quit', () => { saveGame(game); game.state = 'menu'; game.hud.showScreen('start'); refreshStartScreen(); }],
+    ['btn-respawn', () => game.respawnAfterBusted()],
+    ['btn-freeroam', () => game.continueFreeRoam()],
+    ['btn-playagain', () => game.startNewGame()],
   ];
   for (const [id, handler] of buttons) {
     document.getElementById(id).addEventListener('click', handler);
@@ -262,28 +264,28 @@ wireButtons();
 
 // E is handled on keydown for a snappy feel (enter/exit car, vault hold uses keys set).
 window.addEventListener('keydown', (ev) => {
-  if (ev.code === 'KeyE' && !ev.repeat && G.state === 'playing') tryEnterExitCar(G);
+  if (ev.code === 'KeyE' && !ev.repeat && game.state === 'playing') tryEnterExitCar(game);
 });
 
 refreshStartScreen();
-G.hud.showScreen('start');
+game.hud.showScreen('start');
 
 // --- main loop --------------------------------------------------------------
 const clock = new THREE.Clock();
 
 function tickMenu(dt) {
   // Slow orbit around the plaza while the menu is up.
-  const t = G.elapsed * 0.08;
-  camera.position.set(20 + Math.cos(t) * 42, 26, 20 + Math.sin(t) * 42);
-  camera.lookAt(20, 2, 20);
-  updateTraffic(G, dt);
-  updatePedestrians(G, dt);
+  const t = game.elapsed * 0.08;
+  game.camera.position.set(20 + Math.cos(t) * 42, 26, 20 + Math.sin(t) * 42);
+  game.camera.lookAt(20, 2, 20);
+  updateTraffic(game, dt);
+  updatePedestrians(game, dt);
 }
 
 // The per-frame updaters, in order. updatePlayerCar only runs while driving.
 const PLAY_UPDATERS = [
   updatePlayer,
-  (G, dt) => { if (G.player.inCar) updatePlayerCar(G, dt); },
+  (game, dt) => { if (game.player.inCar) updatePlayerCar(game, dt); },
   updateTraffic,
   updatePedestrians,
   updatePolice,
@@ -295,35 +297,41 @@ const PLAY_UPDATERS = [
 ];
 
 function tickPlaying(dt) {
-  for (const step of PLAY_UPDATERS) step(G, dt);
-  G.minimap.draw(G);
-  if (G.audio) G.audio.tick(dt, G.wanted);
+  for (const step of PLAY_UPDATERS) step(game, dt);
+  game.minimap.draw(game);
+  if (game.audio) game.audio.tick(dt, game.wanted);
   // Autosave every 20 s.
-  G.saveTimer += dt;
-  if (G.saveTimer > 20) {
-    G.saveTimer = 0;
-    saveGame(G);
+  game.saveTimer += dt;
+  if (game.saveTimer > 20) {
+    game.saveTimer = 0;
+    saveGame(game);
   }
 }
 
 function tickIdle(dt) {
   // World idles behind the end screens.
-  updateTraffic(G, dt);
-  updatePedestrians(G, dt);
-  updateEffects(G, dt);
-  updateCamera(G, dt);
+  updateTraffic(game, dt);
+  updatePedestrians(game, dt);
+  updateEffects(game, dt);
+  updateCamera(game, dt);
 }
+
+// One tick per state; paused renders the frozen frame and runs nothing.
+const STATE_TICKS = {
+  menu: tickMenu,
+  playing: tickPlaying,
+  busted: tickIdle,
+  won: tickIdle,
+};
 
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
-  G.elapsed += dt;
+  game.elapsed += dt;
 
-  if (G.state === 'menu') tickMenu(dt);
-  else if (G.state === 'playing') tickPlaying(dt);
-  else if (G.state === 'busted' || G.state === 'won') tickIdle(dt);
-  // Paused: render the frozen frame, run nothing.
+  const tick = STATE_TICKS[game.state];
+  if (tick) tick(dt);
 
-  renderer.render(scene, camera);
+  game.renderer.render(game.scene, game.camera);
 }
 animate();
