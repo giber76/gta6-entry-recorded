@@ -7,6 +7,7 @@
 An original open-world crime game in the spirit of GTA 6, built for the
 [make.fun](https://make.fun) gta6-01 bounty. You are Marlo Vance, a driver-for-hire
 in a sun-soaked fictional coastal city, working six jobs for your fixer Rico Salas.
+Six jobs, $12,000 in total — the last one steals the Viper boss's own black coupe.
 
 ## What is in the game
 

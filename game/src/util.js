@@ -1,6 +1,7 @@
 // util.js — deterministic randomness, small math helpers and the procedural
 // canvas textures Solara Bay is built from. Everything here is offline:
 // textures are painted on canvases at runtime, nothing is fetched.
+// mulberry32 is the single seeded stream; makeRng wraps it as a dice bag.
 // The seeded bags drive the city layout; the plain Math.random helpers
 // below are for effects and other unseeded rolls.
 

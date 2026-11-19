@@ -1,6 +1,7 @@
 // debug.js — window.__solara hooks used ONLY by automated play-tests and
 // the screenshot run to stage scenes. They change nothing in normal play:
 // every function here just calls the same code the buttons and keys call.
+// The screenshot run stages chase / driving / on-foot / combat through these.
 
 import { setWanted } from './police.js';
 import { startMission } from './missions.js';

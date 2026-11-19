@@ -1,6 +1,7 @@
 // pedestrians.js — sidewalk walkers who stroll the city and scatter from
 // speeding cars and gunshots. A walker hit by a fast car is knocked down,
 // and that draws the law. An explosion sends every walker nearby running,
+// and a blast within 6 u knocks them flat for 3 s.
 // and knocks flat anyone standing too close to the blast.
 
 import { ROADS } from './city.js';

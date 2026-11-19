@@ -1,53 +1,59 @@
-// vehicles.js — the car factory and arcade driving for Solara Bay.
+// vehicles.js — the car factory and the arcade driving model for Solara
+// Bay.
 //
-// Accelerate, brake, reverse and handbrake; buildings push the car out;
-// bumps with traffic slow both cars. Stealing a parked car only draws the
-// law if someone sees it (police.js decides that).
+// Gas, brake, reverse and handbrake; walls push the car back out;
+// clipping a traffic car slows you both down. Stealing a parked car
+// only draws the law if someone sees it (police.js makes that call).
 //
-// Cars have health (100). Building hits, traffic bumps and police rams
-// all deal damage; a hurt car smokes below half health and burns below a
-// quarter, and a wrecked car explodes, throws its driver clear and stays
-// out of action until it is towed or respawns.
+// Every car carries health (100). Wall hits, traffic bumps and police
+// rams all hurt it; under half health it smokes, under a quarter it
+// burns, and at zero it blows up, throws its driver clear and stays a
+// burnt shell until it is towed or respawns.
 
 import { clamp } from './util.js';
 import { collideCircle } from './city.js';
 import { explodeCar, carExhaust, spawnSkidSmoke, emitBurningSmoke } from './effects.js';
 import { damagePlayer } from './player.js';
 
-const PAINT_POOL = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f, 0x8e44ad, 0x95a5a6, 0xe67e22, 0x16a085];
-const PARKED_SPOTS = [
-  { x: 27, z: 26, heading: -Math.PI / 2, color: 0xff7f11, mission: true },
-  { x: -46, z: 6, heading: 0, color: 0x2e86c1 },
-  { x: 86, z: -46, heading: Math.PI / 2, color: 0x27ae60 },
-  { x: -86, z: 84, heading: Math.PI, color: 0x8e44ad },
-  { x: 44, z: 124, heading: -Math.PI / 2, color: 0xf1c40f },
+// Paint swatches for traffic cars, and the five cars parked around
+// town. The first parked car is the orange mission coupe by the plaza.
+const PAINT_POOL = 'c0392b 2e86c1 27ae60 f1c40f 8e44ad 95a5a6 e67e22 16a085'
+  .split(' ')
+  .map((hex) => parseInt(hex, 16));
+const PARKED_ROWS = [
+  [27, 26, -Math.PI / 2, 0xff7f11, true],
+  [-46, 6, 0, 0x2e86c1, false],
+  [86, -46, Math.PI / 2, 0x27ae60, false],
+  [-86, 84, Math.PI, 0x8e44ad, false],
+  [44, 124, -Math.PI / 2, 0xf1c40f, false],
 ];
-const BURN_DAMAGE_PER_SECOND = 2;
-const SMOKE_HEALTH = 50;
-const BURN_HEALTH = 25;
+const PARKED_SPOTS = PARKED_ROWS.map(([x, z, heading, color, mission]) => ({ x, z, heading, color, mission }));
 
-// Body parts as [geometry, material, x, y, z, castShadow?] — one loop
-// builds the shell, cabin and roof instead of three copy-pasted blocks.
-function buildShell(THREE, group, paint, glass) {
-  const parts = [
+const DAMAGE = { burnPerSecond: 2, smokeBelow: 50, burnBelow: 25 };
+
+// Body pieces as [shape, skin, x, y, z, castsShadow] — one pass builds
+// the shell, the cabin and the roof instead of three near-identical
+// blocks.
+function assembleShell(THREE, group, paint, glass) {
+  const plan = [
     [new THREE.BoxGeometry(2.0, 0.75, 4.4), paint, 0, 0.65, 0, true],
     [new THREE.BoxGeometry(1.7, 0.65, 2.1), glass, 0, 1.3, -0.25, true],
     [new THREE.BoxGeometry(1.75, 0.1, 2.15), paint, 0, 1.65, -0.25, false],
   ];
-  for (const [geo, mat, x, y, z, shadow] of parts) {
-    const piece = new THREE.Mesh(geo, mat);
+  for (const [shape, skin, x, y, z, shadow] of plan) {
+    const piece = new THREE.Mesh(shape, skin);
     piece.position.set(x, y, z);
     piece.castShadow = shadow;
     group.add(piece);
   }
 }
 
-function buildWheels(THREE, group, dark) {
-  const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10);
+function assembleWheels(THREE, group, dark) {
+  const tyre = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10);
+  const corners = [[-0.95, 1.45], [0.95, 1.45], [-0.95, -1.45], [0.95, -1.45]];
   const wheels = [];
-  const spots = [[-0.95, 1.45], [0.95, 1.45], [-0.95, -1.45], [0.95, -1.45]];
-  for (const [wx, wz] of spots) {
-    const wheel = new THREE.Mesh(wheelGeo, dark);
+  for (const [wx, wz] of corners) {
+    const wheel = new THREE.Mesh(tyre, dark);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(wx, 0.38, wz);
     group.add(wheel);
@@ -56,35 +62,35 @@ function buildWheels(THREE, group, dark) {
   return wheels;
 }
 
-function buildLights(THREE, group) {
-  const headMat = new THREE.MeshBasicMaterial({ color: 0xfff6c0 });
-  const tailMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
-  const pairs = [
-    [headMat, 2.21],
-    [tailMat, -2.21],
+function assembleLights(THREE, group) {
+  const headSkin = new THREE.MeshBasicMaterial({ color: 0xfff6c0 });
+  const tailSkin = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+  const ends = [
+    [headSkin, 2.21],
+    [tailSkin, -2.21],
   ];
-  for (const [mat, z] of pairs) {
+  for (const [skin, z] of ends) {
     for (const lx of [-0.6, 0.6]) {
-      const light = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 0.08), mat);
-      light.position.set(lx, 0.75, z);
-      group.add(light);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 0.08), skin);
+      lamp.position.set(lx, 0.75, z);
+      group.add(lamp);
     }
   }
 }
 
-function buildLightBar(THREE, group) {
-  const bar = new THREE.Mesh(
+function assembleLightBar(THREE, group) {
+  const blue = new THREE.Mesh(
     new THREE.BoxGeometry(1.1, 0.16, 0.4),
     new THREE.MeshBasicMaterial({ color: 0x2266ff })
   );
-  bar.position.set(0, 1.75, -0.25);
-  group.add(bar);
-  const bar2 = new THREE.Mesh(
+  blue.position.set(0, 1.75, -0.25);
+  group.add(blue);
+  const red = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.16, 0.42),
     new THREE.MeshBasicMaterial({ color: 0xff2222 })
   );
-  bar2.position.set(0.55, 1.75, -0.25);
-  group.add(bar2);
+  red.position.set(0.55, 1.75, -0.25);
+  group.add(red);
 }
 
 export function makeCarMesh(THREE, color, isPolice) {
@@ -92,10 +98,10 @@ export function makeCarMesh(THREE, color, isPolice) {
   const paint = new THREE.MeshLambertMaterial({ color });
   const dark = new THREE.MeshLambertMaterial({ color: 0x1a1d22 });
   const glass = new THREE.MeshLambertMaterial({ color: 0x9fd8e8 });
-  buildShell(THREE, group, paint, glass);
-  const wheels = buildWheels(THREE, group, dark);
-  buildLights(THREE, group);
-  if (isPolice) buildLightBar(THREE, group);
+  assembleShell(THREE, group, paint, glass);
+  const wheels = assembleWheels(THREE, group, dark);
+  assembleLights(THREE, group);
+  if (isPolice) assembleLightBar(THREE, group);
   return { group, wheels };
 }
 
@@ -124,13 +130,13 @@ export function createCar(G, opts) {
     wreckTimer: 0,
     smokeTimer: 0,
     skidTimer: 0,
+    // Driving model: police cars run a little faster than civilian ones.
+    topSpeed: opts.police ? 42 : 38,
+    accel: 16,
+    brake: 30,
+    length: 4.4,
+    width: 2.0,
   };
-  // Driving model: police cars are a little faster than civilian ones.
-  car.topSpeed = opts.police ? 42 : 38;
-  car.accel = 16;
-  car.brake = 30;
-  car.length = 4.4;
-  car.width = 2.0;
   car.pos = group.position;
   // The raycast in combat.js walks up from a hit mesh to find this car.
   group.userData.car = car;
@@ -172,24 +178,25 @@ export function wreckCar(G, car) {
 // to colour the car's marker: pristine, smoking, burning or wrecked.
 export function carDamageState(car) {
   if (!car || car.wrecked || car.dead) return 'wrecked';
-  if (car.health <= BURN_HEALTH) return 'burning';
-  if (car.health <= SMOKE_HEALTH) return 'smoking';
+  if (car.health <= DAMAGE.burnBelow) return 'burning';
+  if (car.health <= DAMAGE.smokeBelow) return 'smoking';
   return 'pristine';
 }
 
-// Parked cars Marlo can steal, including the orange mission coupe by the plaza.
+// Parked cars Marlo can steal, including the orange mission coupe by
+// the plaza.
 export function spawnParkedCars(G) {
-  G.parkedCars = PARKED_SPOTS.map((s) => {
-    const car = createCar(G, { x: s.x, z: s.z, heading: s.heading, color: s.color, parked: true });
-    car.mission = !!s.mission;
+  G.parkedCars = PARKED_SPOTS.map((spot) => {
+    const car = createCar(G, { x: spot.x, z: spot.z, heading: spot.heading, color: spot.color, parked: true });
+    car.mission = !!spot.mission;
     return car;
   });
   G.missionCoupe = G.parkedCars[0];
   return G.parkedCars;
 }
 
-// Push a car out of any building it overlaps; true when it was pushed.
-function pushOutOfBuildings(G, car) {
+// Shove a car out of any building it overlaps; true when it was pushed.
+function pushCarOutOfWalls(G, car) {
   const fixed = collideCircle(G, car.pos.x, car.pos.z, 2.2);
   if (!fixed.hit) return false;
   car.pos.x = fixed.x;
@@ -199,29 +206,29 @@ function pushOutOfBuildings(G, car) {
 
 // Bump into traffic cars: both are pushed apart and slow down, and a
 // hard bump damages both cars.
-function bumpTraffic(G, car) {
-  for (const t of G.trafficCars || []) {
-    if (t.wrecked) continue;
-    const dx = car.pos.x - t.pos.x;
-    const dz = car.pos.z - t.pos.z;
+function bumpIntoTraffic(G, car) {
+  for (const other of G.trafficCars || []) {
+    if (other.wrecked) continue;
+    const dx = car.pos.x - other.pos.x;
+    const dz = car.pos.z - other.pos.z;
     const gap = Math.hypot(dx, dz);
     if (gap >= 3.6 || gap <= 0.01) continue;
     const shove = (3.6 - gap) / gap;
     car.pos.x += dx * shove * 0.5;
     car.pos.z += dz * shove * 0.5;
-    t.pos.x -= dx * shove * 0.5;
-    t.pos.z -= dz * shove * 0.5;
+    other.pos.x -= dx * shove * 0.5;
+    other.pos.z -= dz * shove * 0.5;
     if (Math.abs(car.speed) > 8) {
       car.speed *= 0.7;
       damageCar(G, car, 6);
-      damageCar(G, t, 6);
+      damageCar(G, other, 6);
       if (G.audio) G.audio.crash();
     }
   }
 }
 
 // Read the drive keys into gas / reverse / handbrake / steer.
-function readDriveInput(G) {
+function readPedals(G) {
   const gas = G.keys.has('KeyW');
   const reverse = G.keys.has('KeyS');
   const handbrake = G.keys.has('Space');
@@ -231,46 +238,45 @@ function readDriveInput(G) {
   return { gas, reverse, handbrake, steerInput };
 }
 
-function applyDriveForces(car, input, dt) {
-  const { gas, reverse, handbrake } = input;
-  if (gas) car.speed += car.accel * dt;
-  if (reverse) {
+function driveForces(car, pedals, dt) {
+  if (pedals.gas) car.speed += car.accel * dt;
+  if (pedals.reverse) {
     if (car.speed > 0.5) car.speed -= car.brake * dt;
     else car.speed -= car.accel * 0.6 * dt;
   }
-  if (!gas && !reverse) {
+  if (!pedals.gas && !pedals.reverse) {
     // Rolling drag.
     car.speed -= Math.sign(car.speed) * 6 * dt;
     if (Math.abs(car.speed) < 0.3) car.speed = 0;
   }
-  if (handbrake) {
+  if (pedals.handbrake) {
     car.speed -= Math.sign(car.speed) * 26 * dt;
     if (Math.abs(car.speed) < 0.5) car.speed = 0;
   }
   car.speed = clamp(car.speed, -12, car.topSpeed);
 }
 
-function applySteering(car, input, dt) {
-  const steerTarget = input.steerInput * 0.55 * (car.speed >= 0 ? 1 : -1);
-  car.steer += (steerTarget - car.steer) * Math.min(1, dt * 8);
-  const turnRate = car.steer * clamp(Math.abs(car.speed) / 8, 0, 1) * 1.9;
-  car.heading += turnRate * dt * (input.handbrake ? 1.5 : 1);
+function steerCar(car, pedals, dt) {
+  const target = pedals.steerInput * 0.55 * (car.speed >= 0 ? 1 : -1);
+  car.steer += (target - car.steer) * Math.min(1, dt * 8);
+  const turn = car.steer * clamp(Math.abs(car.speed) / 8, 0, 1) * 1.9;
+  car.heading += turn * dt * (pedals.handbrake ? 1.5 : 1);
 }
 
 // A hurt car smokes, and a burning car keeps losing health until it
 // wrecks. Tyre smoke puffs from the rear wheels on a hard handbrake.
-function updateCarDamage(G, car, input, dt) {
-  if (car.health < SMOKE_HEALTH && car.health > 0) {
+function wearAndSmoke(G, car, pedals, dt) {
+  if (car.health < DAMAGE.smokeBelow && car.health > 0) {
     carExhaust(G, car, dt);
-    if (car.health < BURN_HEALTH) {
+    if (car.health < DAMAGE.burnBelow) {
       // A burning car vents a continuous smoke plume and takes
       // burn damage until it wrecks.
       emitBurningSmoke(G, car.pos.x, car.pos.z, dt);
-      damageCar(G, car, BURN_DAMAGE_PER_SECOND * dt);
+      damageCar(G, car, DAMAGE.burnPerSecond * dt);
     }
   }
   car.skidTimer -= dt;
-  if (input.handbrake && Math.abs(car.speed) > 10 && car.skidTimer <= 0) {
+  if (pedals.handbrake && Math.abs(car.speed) > 10 && car.skidTimer <= 0) {
     car.skidTimer = 0.08;
     const bx = car.pos.x - Math.sin(car.heading) * 1.5;
     const bz = car.pos.z - Math.cos(car.heading) * 1.5;
@@ -286,20 +292,20 @@ export function updatePlayerCar(G, dt) {
   // The pistol cooldown ticks while driving, so a drive-by can fire
   // more than once.
   p.shootCooldown = Math.max(0, p.shootCooldown - dt);
-  const input = readDriveInput(G);
-  applyDriveForces(car, input, dt);
-  applySteering(car, input, dt);
+  const pedals = readPedals(G);
+  driveForces(car, pedals, dt);
+  steerCar(car, pedals, dt);
   car.pos.x += Math.sin(car.heading) * car.speed * dt;
   car.pos.z += Math.cos(car.heading) * car.speed * dt;
-  if (pushOutOfBuildings(G, car)) {
+  if (pushCarOutOfWalls(G, car)) {
     if (Math.abs(car.speed) > 6) {
       damageCar(G, car, Math.abs(car.speed) * 0.5);
       if (G.audio) G.audio.crash();
     }
     car.speed *= 0.45;
   }
-  bumpTraffic(G, car);
-  updateCarDamage(G, car, input, dt);
+  bumpIntoTraffic(G, car);
+  wearAndSmoke(G, car, pedals, dt);
   if (car.wrecked) return;
   car.group.rotation.y = car.heading;
   const spin = car.speed * dt * 2.6;

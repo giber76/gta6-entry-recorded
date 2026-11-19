@@ -1,6 +1,7 @@
 // input.js — keyboard and mouse for Solara Bay.
 //
 // WASD move and drive, mouse drag to look around, SPACE handbrake, E to
+// enter a car, R cycles the radio, Z/X zoom the minimap, Q swaps weapon.
 // interact, Q to switch weapon, R to cycle the radio, Z/X to zoom the
 // minimap, SHIFT to sprint, P or ESC to pause, M for the mission list.
 // The pistol never needs reloading, so there is no reload key. Keys live

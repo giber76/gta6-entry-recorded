@@ -7,3 +7,4 @@ node_modules/
 # Play-test output and logs.
 *.log
 playtest-*.json
+# Screenshots are part of the entry — never ignore them.

@@ -1,6 +1,7 @@
 // player.js — Marlo Vance on foot: WASD movement, sprint, and the
 // third-person camera. Driving lives in vehicles.js; this file only moves
 // Marlo while he is walking. The camera shakes with the explosion
+// and follows the car while driving.
 // magnitude the effects system reports each frame.
 
 import { collideCircle } from './city.js';

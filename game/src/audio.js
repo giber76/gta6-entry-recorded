@@ -1,6 +1,7 @@
 // audio.js — every sound in Solara Bay is synthesised with WebAudio:
 // no audio files, no network. Engine hum, police siren, gunshots,
 // punches, pickups, mission stingers — and a three-station radio.
+// First R press turns the radio on to SOLARA FM; later presses cycle.
 //
 // The sound engine has three layers: a voice rack (the two always-on
 // voices, engine and siren), a pattern player (short sequences of notes

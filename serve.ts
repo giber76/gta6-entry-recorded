@@ -1,6 +1,7 @@
 // serve.ts — a tiny static file server for local play-testing of Solara Bay.
 // Serves the game/ folder at the root on port 8080 (or PORT, or the first
 // command-line argument). Dev convenience only; the entry itself is
+// served by the make.fun runner. Point the screenshot script at this server.
 // static files and makes no network requests.
 
 import { createServer } from 'node:http';

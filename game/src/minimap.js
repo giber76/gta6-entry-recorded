@@ -1,6 +1,7 @@
 // minimap.js — a north-up 2D top-down map of Solara Bay: roads, the ocean,
 // the player arrow, cars, police, enemies and the mission marker.
 // Drawn fresh every frame onto the 180×180 HUD canvas.
+// Zoom levels are 1x / 2x / 4x, centred on Marlo; the ocean fills the east half.
 //
 // Zoom: 1x shows the whole city; 2x and 4x centre on Marlo and show a
 // smaller patch (Z zooms in, X zooms out). The ground is painted in

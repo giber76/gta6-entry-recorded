@@ -1,6 +1,8 @@
 // police.js — the wanted system for Solara Bay.
 //
 // Stars run 0–5. Police cars chase and ram; foot officers chase and punch,
+// and a ram that wrecks your car throws you clear. Heat dies down when
+// Marlo stays out of sight.
 // but only while Marlo is on foot. Stars fall one per 10 s, and only while
 // no pursuer can see him. A ram damages the player's car as well as
 // Marlo, and the ramming police car takes a dent too. A wrecked police

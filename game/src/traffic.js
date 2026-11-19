@@ -1,6 +1,7 @@
 // traffic.js — AI cars cruising the road grid. They turn at intersections,
 // brake for the player's car ahead of them, and wrap around the city edge
 // so the streets never empty out. Spawns are seeded; turns and wrap-arounds
+// use plain Math.random so they never disturb the seeded layout streams.
 // roll plain Math.random. A wrecked traffic car is towed and respawns
 // after 8 s, so the streets stay busy even after a pile-up.
 

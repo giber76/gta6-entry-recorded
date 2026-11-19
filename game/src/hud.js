@@ -1,6 +1,7 @@
 // hud.js — the Solara Bay HUD: health, cash, wanted stars, objective,
 // prompts, dialogue, toasts, speed, the car's health while driving, the
 // radio station, and the menu / pause / busted / win screens.
+// The radio label shows the current station; the car bar appears only while driving.
 //
 // The damage vignette flashes red when Marlo takes a hit (player.js
 // sets G.hudFlash) and fades out over the next second.

@@ -1,6 +1,7 @@
 // main.ts — Solara Bay entrypoint (Node 22, standard library only).
 //
 // Copies game/ and screenshots/ into the output directory and writes
+// the runner that serves the game. Screenshots ship with the entry.
 // dossier.json with buildDossier from the kit's vendor/makefun-game.ts.
 // Deterministic: the output directory is wiped first, so two runs write
 // the same bytes. The v2 explosion effects (game/src/effects.js) are a

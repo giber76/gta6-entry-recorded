@@ -1,4 +1,5 @@
 // effects.js — explosions, smoke, sparks and camera shake for Solara Bay.
+// A wrecked car fires one explosion burst, then a smoke plume while it burns.
 //
 // Every effect is a short-lived particle: a mesh with a velocity, a life
 // and a fade. An explosion also flashes a point light, shakes the camera

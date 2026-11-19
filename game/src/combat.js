@@ -1,12 +1,12 @@
 // combat.js — fists, the pistol, and the Crimson Vipers.
 //
 // Marlo fights on foot with fists or the pistol, and from the driver's
-// seat with drive-by shots aimed along the camera. Fists reach 2.4 u and
-// hit for 25; the pistol reaches 70 u and hits for 34, so a Viper (100
-// health) falls to three shots — and a car body takes the same 34.
-// Enemies close to 15 u, then strafe in a standoff and shoot with poor
+// seat with drive-by shots aimed along the camera. Fists reach 2.4 u
+// and hit for 25; the pistol reaches 70 u and hits for 34, so a Viper
+// (100 health) falls to three shots — and a car body takes the same 34.
+// Vipers close to 15 u, then sidestep in a standoff and shoot with poor
 // aim — about one shot in four lands, for 6 damage. A Viper backs off
-// when Marlo gets right up in its face. Dead enemies fall and fade
+// when Marlo gets right up in its face. Dead Vipers fall and fade
 // after 1.2 s. Tracers are thin yellow lines that live 0.09 s.
 
 import { scatterPeds } from './pedestrians.js';
@@ -14,20 +14,28 @@ import { damagePlayer } from './player.js';
 import { damageCar } from './vehicles.js';
 import { spawnMuzzleFlash } from './effects.js';
 
-const WEAPONS = {
-  fists: { damage: 25, reach: 2.4, cooldown: 0.4 },
-  pistol: { damage: 34, reach: 70, cooldown: 0.25 },
+// [weapon, damage, reach, cooldown]
+const WEAPON_ROWS = [
+  ['fists', 25, 2.4, 0.4],
+  ['pistol', 34, 70, 0.25],
+];
+const WEAPONS = Object.fromEntries(
+  WEAPON_ROWS.map(([name, damage, reach, cooldown]) => [name, { damage, reach, cooldown }])
+);
+
+// Viper tuning, in one place.
+const VIPER = {
+  health: 100,
+  advance: 5.5,
+  shootRange: 40,
+  noticeRange: 45,
+  standoff: 15,
+  backoffRange: 6,
+  strafeSpeed: 3,
+  retreatSpeed: 3.5,
+  hitChance: 0.25,
+  hitDamage: 6,
 };
-const VIPER_HEALTH = 100;
-const VIPER_ADVANCE = 5.5;
-const VIPER_SHOOT_RANGE = 40;
-const VIPER_NOTICE_RANGE = 45;
-const VIPER_STANDOFF = 15;
-const VIPER_BACKOFF_RANGE = 6;
-const VIPER_STRAFE_SPEED = 3;
-const VIPER_RETREAT_SPEED = 3.5;
-const VIPER_HIT_CHANCE = 0.25;
-const VIPER_HIT_DAMAGE = 6;
 const TRACER_LIFE = 0.09;
 
 export function initCombat(G) {
@@ -40,26 +48,26 @@ export function initCombat(G) {
 }
 
 // A Viper: crimson shirt, dark headband, a pistol in hand.
-function buildViper(THREE, x, z) {
+function makeViperMesh(THREE, x, z) {
   const group = new THREE.Group();
   const crimson = new THREE.MeshLambertMaterial({ color: 0x8e1f2f });
   const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a4a });
   const dark = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
-  // [geometry, material, x, y, z] for the fixed body parts.
-  const parts = [
-    [new THREE.CylinderGeometry(0.42, 0.5, 1.05, 10), crimson, 0, 1.05, 0],
-    [new THREE.SphereGeometry(0.3, 12, 10), skin, 0, 1.85, 0],
-    [new THREE.CylinderGeometry(0.31, 0.31, 0.1, 12), dark, 0, 1.98, 0],
-    [new THREE.BoxGeometry(0.09, 0.14, 0.5), dark, 0.3, 1.25, 0.5],
+  // Body pieces as {shape, skin, at:[x,y,z]}.
+  const bodyPlan = [
+    { shape: new THREE.CylinderGeometry(0.42, 0.5, 1.05, 10), skin: crimson, at: [0, 1.05, 0] },
+    { shape: new THREE.SphereGeometry(0.3, 12, 10), skin, at: [0, 1.85, 0] },
+    { shape: new THREE.CylinderGeometry(0.31, 0.31, 0.1, 12), skin: dark, at: [0, 1.98, 0] },
+    { shape: new THREE.BoxGeometry(0.09, 0.14, 0.5), skin: dark, at: [0.3, 1.25, 0.5] },
   ];
-  const meshes = [];
-  for (const [geo, mat, px, py, pz] of parts) {
-    const piece = new THREE.Mesh(geo, mat);
-    piece.position.set(px, py, pz);
-    group.add(piece);
-    meshes.push(piece);
+  const built = [];
+  for (const piece of bodyPlan) {
+    const mesh = new THREE.Mesh(piece.shape, piece.skin);
+    mesh.position.set(piece.at[0], piece.at[1], piece.at[2]);
+    group.add(mesh);
+    built.push(mesh);
   }
-  meshes[0].castShadow = true;
+  built[0].castShadow = true;
   const shinL = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.7, 8), dark);
   shinL.position.set(-0.2, 0.35, 0);
   group.add(shinL);
@@ -67,17 +75,17 @@ function buildViper(THREE, x, z) {
   shinR.position.x = 0.2;
   group.add(shinR);
   group.position.set(x, 0, z);
-  return { group, body: meshes[0], legL: shinL, legR: shinR, gun: meshes[3] };
+  return { group, body: built[0], legL: shinL, legR: shinR, gun: built[3] };
 }
 
 export function spawnEnemy(G, x, z, missionTag) {
   const THREE = window.THREE;
-  const parts = buildViper(THREE, x, z);
+  const parts = makeViperMesh(THREE, x, z);
   G.scene.add(parts.group);
   const viper = {
     ...parts,
     pos: parts.group.position,
-    health: VIPER_HEALTH,
+    health: VIPER.health,
     missionTag: missionTag ?? null,
     shootCooldown: 1 + Math.random(),
     walkPhase: Math.random() * 6,
@@ -102,7 +110,7 @@ function drawTracer(G, from, to) {
   G.tracers.push({ line, life: TRACER_LIFE });
 }
 
-function gunMuzzle(G) {
+function muzzlePoint(G) {
   const p = G.player;
   const fwd = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
   return new THREE.Vector3(p.pos.x + fwd.x * 0.8, 1.35, p.pos.z + fwd.z * 0.8);
@@ -209,7 +217,7 @@ function firePistol(G) {
   }
   const muzzle = driving
     ? new THREE.Vector3(p.car.pos.x + dir.x * 1.2, 1.35, p.car.pos.z + dir.z * 1.2)
-    : gunMuzzle(G);
+    : muzzlePoint(G);
   spawnMuzzleFlash(G, muzzle.x, muzzle.y, muzzle.z, dir.x, dir.z);
   drawTracer(G, muzzle, end);
 }
@@ -246,29 +254,31 @@ export function damageEnemy(G, enemy, amount) {
   if (G.onEnemyKilled) G.onEnemyKilled(enemy);
 }
 
-// Walk a Viper toward Marlo until it is inside its standoff range.
-function advanceViper(e, dx, dz, gap, dt) {
-  if (gap <= VIPER_STANDOFF) return;
-  const step = VIPER_ADVANCE * dt;
-  e.pos.x += (dx / gap) * step;
-  e.pos.z += (dz / gap) * step;
+// One leg swing step for a walking Viper.
+function swingLegs(e, dt) {
   e.walkPhase += dt * 9;
   const swing = Math.sin(e.walkPhase) * 0.5;
   e.legL.rotation.x = swing;
   e.legR.rotation.x = -swing;
 }
 
+// Walk a Viper toward Marlo until it is inside its standoff range.
+function advanceViper(e, dx, dz, gap, dt) {
+  if (gap <= VIPER.standoff) return;
+  const step = VIPER.advance * dt;
+  e.pos.x += (dx / gap) * step;
+  e.pos.z += (dz / gap) * step;
+  swingLegs(e, dt);
+}
+
 // Inside the standoff a Viper sidesteps instead of closing in, and it
 // backs off when Marlo gets right up in its face.
 function strafeViper(e, dx, dz, gap, dt) {
-  if (gap < VIPER_BACKOFF_RANGE) {
-    const away = VIPER_RETREAT_SPEED * dt;
+  if (gap < VIPER.backoffRange) {
+    const away = VIPER.retreatSpeed * dt;
     e.pos.x -= (dx / (gap || 1)) * away;
     e.pos.z -= (dz / (gap || 1)) * away;
-    e.walkPhase += dt * 9;
-    const swing = Math.sin(e.walkPhase) * 0.5;
-    e.legL.rotation.x = swing;
-    e.legR.rotation.x = -swing;
+    swingLegs(e, dt);
     return;
   }
   e.strafeTimer -= dt;
@@ -278,13 +288,10 @@ function strafeViper(e, dx, dz, gap, dt) {
   }
   const px = -dz / (gap || 1);
   const pz = dx / (gap || 1);
-  const step = VIPER_STRAFE_SPEED * dt * e.strafeDir;
+  const step = VIPER.strafeSpeed * dt * e.strafeDir;
   e.pos.x += px * step;
   e.pos.z += pz * step;
-  e.walkPhase += dt * 9;
-  const swing = Math.sin(e.walkPhase) * 0.5;
-  e.legL.rotation.x = swing;
-  e.legR.rotation.x = -swing;
+  swingLegs(e, dt);
 }
 
 function viperShoot(G, e) {
@@ -295,8 +302,8 @@ function viperShoot(G, e) {
   const from = new THREE.Vector3(e.pos.x, 1.4, e.pos.z);
   const to = new THREE.Vector3(p.pos.x, 1.3, p.pos.z);
   drawTracer(G, from, to);
-  if (Math.random() < VIPER_HIT_CHANCE) {
-    damagePlayer(G, VIPER_HIT_DAMAGE, 'shot by a Viper');
+  if (Math.random() < VIPER.hitChance) {
+    damagePlayer(G, VIPER.hitDamage, 'shot by a Viper');
   }
 }
 
@@ -334,11 +341,11 @@ export function updateEnemies(G, dt) {
       e.aimError = Math.max(0.12, e.aimError - dt * 0.4);
       continue;
     }
-    if (gap >= VIPER_NOTICE_RANGE || p.health <= 0 || G.state !== 'playing') continue;
-    if (gap > VIPER_STANDOFF) advanceViper(e, dx, dz, gap, dt);
+    if (gap >= VIPER.noticeRange || p.health <= 0 || G.state !== 'playing') continue;
+    if (gap > VIPER.standoff) advanceViper(e, dx, dz, gap, dt);
     else strafeViper(e, dx, dz, gap, dt);
     e.group.rotation.y = Math.atan2(dx, dz);
-    if (gap < VIPER_SHOOT_RANGE && e.shootCooldown <= 0) viperShoot(G, e);
+    if (gap < VIPER.shootRange && e.shootCooldown <= 0) viperShoot(G, e);
   }
   fadeTracers(G, dt);
 }

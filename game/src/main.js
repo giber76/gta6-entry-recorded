@@ -1,5 +1,6 @@
 // main.js — Solara Bay: game loop, state machine and wiring.
 // States: menu → playing ⇄ paused, busted (respawn), won (free roam).
+// Per-frame updaters run in a fixed order: car, player, police, traffic, enemies, missions.
 
 import { initCity } from './city.js';
 import { createPlayer, updatePlayer, updateCamera, damagePlayer } from './player.js';
