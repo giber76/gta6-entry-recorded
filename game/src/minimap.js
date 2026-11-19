@@ -163,13 +163,29 @@ export function createMinimap(G) {
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N', c.width / 2, 16);
+    ctx.fillText('N', canvas.width / 2, 16);
     ctx.textAlign = 'left';
     // Zoom level, bottom-left of the map.
     const zoom = G.minimapZoom ?? 1;
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText(`${zoom}x`, 6, H - 6);
+    // Legend (bottom-right): gold = objective, red = Viper, blue = Marlo.
+    const legend = [
+      ['#e8b64c', 'job'],
+      ['#e33d3d', 'Viper'],
+      ['#4fc3f7', 'you'],
+    ];
+    ctx.font = '10px sans-serif';
+    legend.forEach(([color, label], i) => {
+      const y = H - 8 - i * 14;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(canvas.width - 52, y - 3, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(label, canvas.width - 44, y);
+    });
   }
 
   return { draw };

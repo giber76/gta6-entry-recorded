@@ -90,12 +90,22 @@ export function fleeFromBlast(G, x, z) {
       walker.down = 3;
       walker.group.rotation.x = -Math.PI / 2;
     }
+    // Anyone who saw the blast panics: they run for a few seconds
+    // even after the initial scatter, instead of calmly strolling on.
+    if (d < 20 && walker.down <= 0) {
+      walker.panic = 4;
+      const away = Math.max(d, 0.01);
+      walker.panicX = (walker.pos.x - x) / away;
+      walker.panicZ = (walker.pos.z - z) / away;
+    }
   }
 }
 
-// Which way this walker is walking right now: fleeing (from a car or a
-// shot) or strolling along its road. Returns [mx, mz, speed].
+// Which way this walker is walking right now: panicking (from a blast),
+// fleeing (from a car or a shot) or strolling along its road.
+// Returns [mx, mz, speed].
 function walkDirection(G, walker) {
+  if (walker.panic > 0) return [walker.panicX, walker.panicZ, 7.5];
   if (walker.flee > 0) return [walker.fleeX, walker.fleeZ, 6.5];
   const p = G.player;
   if (p.inCar && p.car && Math.abs(p.car.speed) > 12) {
@@ -145,6 +155,7 @@ function stepWalker(G, walker, dt) {
     return;
   }
   if (walker.flee > 0) walker.flee -= dt;
+  if (walker.panic > 0) walker.panic -= dt;
   const [mx, mz, speed] = walkDirection(G, walker);
   const nx = walker.pos.x + mx * speed * dt;
   const nz = walker.pos.z + mz * speed * dt;

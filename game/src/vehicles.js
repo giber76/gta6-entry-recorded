@@ -11,7 +11,7 @@
 
 import { clamp } from './util.js';
 import { collideCircle } from './city.js';
-import { explodeCar, carExhaust, spawnSkidSmoke } from './effects.js';
+import { explodeCar, carExhaust, spawnSkidSmoke, emitBurningSmoke } from './effects.js';
 import { damagePlayer } from './player.js';
 
 const PAINT_POOL = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f, 0x8e44ad, 0x95a5a6, 0xe67e22, 0x16a085];
@@ -161,6 +161,15 @@ export function wreckCar(G, car) {
   if (G.audio) G.audio.crash();
 }
 
+// A one-word damage state for a car, used by the HUD and the minimap
+// to colour the car's marker: pristine, smoking, burning or wrecked.
+export function carDamageState(car) {
+  if (!car || car.wrecked || car.dead) return 'wrecked';
+  if (car.health <= BURN_HEALTH) return 'burning';
+  if (car.health <= SMOKE_HEALTH) return 'smoking';
+  return 'pristine';
+}
+
 // Parked cars Marlo can steal, including the orange mission coupe by the plaza.
 export function spawnParkedCars(G) {
   G.parkedCars = PARKED_SPOTS.map((s) => {
@@ -246,7 +255,12 @@ function applySteering(car, input, dt) {
 function updateCarDamage(G, car, input, dt) {
   if (car.health < SMOKE_HEALTH && car.health > 0) {
     carExhaust(G, car, dt);
-    if (car.health < BURN_HEALTH) damageCar(G, car, BURN_DAMAGE_PER_SECOND * dt);
+    if (car.health < BURN_HEALTH) {
+      // A burning car vents a continuous smoke plume and takes
+      // burn damage until it wrecks.
+      emitBurningSmoke(G, car.pos.x, car.pos.z, dt);
+      damageCar(G, car, BURN_DAMAGE_PER_SECOND * dt);
+    }
   }
   car.skidTimer -= dt;
   if (input.handbrake && Math.abs(car.speed) > 10 && car.skidTimer <= 0) {

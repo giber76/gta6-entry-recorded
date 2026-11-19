@@ -148,7 +148,10 @@ G.onPlayerHitByTraffic = () => {
 };
 
 G.onEnemyKilled = (enemy) => {
-  G.hud.toast('Viper down');
+  // Count the kill and say so: a running tally of Vipers taken down,
+  // shown in the debug snapshot for play-tests.
+  G.kills = (G.kills || 0) + 1;
+  G.hud.toast(`Viper down — ${G.kills} taken out`);
   if (G.audio) G.audio.pickup();
 };
 
@@ -207,6 +210,8 @@ G.continueGame = () => {
   p.pos.z = data.z;
   p.group.position.set(p.pos.x, 0, p.pos.z);
   if (G.audio) G.audio.setStation(data.station ?? 0);
+  // Restore the saved minimap zoom as well.
+  if (data.minimapZoom) G.minimapZoom = data.minimapZoom;
   initMissions(G);
   // Restore the saved mission directly (earlier jobs are already paid).
   if (data.mission > 0) startMission(G, data.mission);

@@ -29,6 +29,8 @@ function snapshotDynamic(G, p) {
     nearestPolice: nearestGap(G.policeCars, p),
     nearestOfficer: nearestGap(G.officers, p),
     carHealth: p.inCar && p.car ? Math.round(p.car.health) : null,
+    // Running tally of Vipers Marlo has taken down this session.
+    kills: G.kills || 0,
     elapsed: round1(G.elapsed ?? 0),
   };
 }

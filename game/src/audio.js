@@ -93,6 +93,11 @@ const PATTERNS = {
     { at: 0, freq: 60, dur: 0.3, wave: 'sawtooth', vol: 0.25, slide: 110 },
     { at: 260, freq: 110, dur: 0.15, wave: 'sawtooth', vol: 0.2, slide: 165 },
   ],
+  // A low-health heartbeat: two dull thumps, Marlo is almost done.
+  heartbeat: [
+    { at: 0, freq: 55, dur: 0.12, wave: 'sine', vol: 0.4 },
+    { at: 180, freq: 50, dur: 0.16, wave: 'sine', vol: 0.35 },
+  ],
 };
 
 export function createAudio() {
@@ -345,6 +350,11 @@ export function createAudio() {
     engineStart() {
       if (!buildContext()) return;
       playPattern(PATTERNS.engineStart);
+    },
+
+    heartbeat() {
+      if (!buildContext()) return;
+      playPattern(PATTERNS.heartbeat);
     },
 
     nextStation() {

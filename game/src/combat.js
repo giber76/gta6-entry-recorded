@@ -233,7 +233,13 @@ export function playerAttack(G) {
 export function damageEnemy(G, enemy, amount) {
   if (enemy.dead) return;
   enemy.health -= amount;
-  if (enemy.health > 0) return;
+  if (enemy.health > 0) {
+    // A surviving Viper flinches: it staggers for a moment and its
+    // aim is thrown off, so landing a hit buys Marlo a little time.
+    enemy.flinchTimer = 0.35;
+    enemy.aimError = 0.5;
+    return;
+  }
   enemy.dead = true;
   enemy.deadTimer = 1.2;
   enemy.group.rotation.x = -Math.PI / 2;
@@ -321,6 +327,13 @@ export function updateEnemies(G, dt) {
     const dz = p.pos.z - e.pos.z;
     const gap = Math.hypot(dx, dz);
     e.shootCooldown -= dt;
+    // A flinching Viper staggers and cannot shoot; its aim error
+    // decays back to normal over the next second.
+    if (e.flinchTimer > 0) {
+      e.flinchTimer -= dt;
+      e.aimError = Math.max(0.12, e.aimError - dt * 0.4);
+      continue;
+    }
     if (gap >= VIPER_NOTICE_RANGE || p.health <= 0 || G.state !== 'playing') continue;
     if (gap > VIPER_STANDOFF) advanceViper(e, dx, dz, gap, dt);
     else strafeViper(e, dx, dz, gap, dt);

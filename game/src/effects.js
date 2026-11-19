@@ -165,7 +165,38 @@ export function spawnDebris(G, x, z, count) {
   }
 }
 
-// A puff of tyre smoke at the rear wheels while handbraking at speed.
+// Continuous smoke from a burning car, called once per frame while the
+// car is below 25 HP. Emits a dark plume that rises and drifts with
+// the wind, plus an occasional ember.
+export function emitBurningSmoke(G, x, z, dt) {
+  if (!G.effects) return;
+  G.effects._burnAcc = (G.effects._burnAcc || 0) + dt;
+  const interval = 0.06;
+  while (G.effects._burnAcc >= interval) {
+    G.effects._burnAcc -= interval;
+    spawnParticle(G, x + randRange(-0.6, 0.6), 1.2, z + randRange(-0.6, 0.6), {
+      color: 0x1a1a1a,
+      size: randRange(0.5, 0.9),
+      vx: randRange(-0.4, 0.4),
+      vy: randRange(2.5, 4),
+      vz: randRange(-0.4, 0.4),
+      life: randRange(1.2, 2),
+      grow: 1.8,
+      opacity: 0.75,
+    });
+    if (Math.random() < 0.3) {
+      spawnParticle(G, x, 1, z, {
+        color: 0xffa63c,
+        size: 0.2,
+        vx: randRange(-2, 2),
+        vy: randRange(3, 6),
+        vz: randRange(-2, 2),
+        life: randRange(0.3, 0.6),
+        gravity: -4,
+      });
+    }
+  }
+}
 export function spawnSkidSmoke(G, x, z) {
   if (!G.effects) return;
   spawnParticle(G, x, 0.4, z, {

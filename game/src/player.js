@@ -101,6 +101,25 @@ export function updatePlayer(G, dt) {
   p.punchCooldown = Math.max(0, p.punchCooldown - dt);
   p.shootCooldown = Math.max(0, p.shootCooldown - dt);
 
+  // A slow heartbeat when Marlo is badly hurt (below 25 health),
+  // once per second, so the danger is audible as well as visible.
+  if (p.health < 25) {
+    p.heartTimer = (p.heartTimer || 0) - dt;
+    if (p.heartTimer <= 0) {
+      p.heartTimer = 1;
+      if (G.audio) G.audio.heartbeat();
+    }
+  } else {
+    p.heartTimer = 0;
+  }
+
+  // Out of combat for a while, Marlo slowly patches himself up
+  // (1 HP per second after 10 seconds without taking damage).
+  p.regenTimer = (p.regenTimer || 0) + dt;
+  if (p.regenTimer > 10 && p.health < 100) {
+    healPlayer(G, dt * 1);
+  }
+
   const sprint = G.sprinting();
   const speed = sprint ? SPRINT_SPEED : WALK_SPEED;
   const [mx, mz, moving] = walkVector(G);
@@ -167,6 +186,7 @@ export function damagePlayer(G, amount, cause) {
   const p = G.player;
   if (p.health <= 0 || G.state !== 'playing') return;
   p.health = Math.max(0, p.health - amount);
+  p.regenTimer = 0; // Taking damage restarts the regen clock.
   G.hudFlash = 1;
   if (p.health <= 0) {
     G.state = 'busted';

@@ -36,6 +36,9 @@ export function saveGame(G) {
     health: p.health,
     hasPistol: p.hasPistol,
     station: G.audio ? G.audio.stationIndex() : 0,
+    // The minimap zoom and the radio station are remembered too, so a
+    // continued game opens exactly as Marlo left it.
+    minimapZoom: G.minimapZoom ?? 1,
     savedAt: Date.now(),
   };
   return writeStorage(JSON.stringify(data));

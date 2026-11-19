@@ -173,6 +173,58 @@ function raiseTower(THREE, scene, rng, spot, colliders) {
   colliders.push({ minX: spot.x - 12, maxX: spot.x + 12, minZ: spot.z - 12, maxZ: spot.z + 12 });
 }
 
+// A lighthouse at the far end of the beach: a striped white-and-red
+// tower with a glowing lamp room on top.
+function raiseLighthouse(THREE, scene, x, z, colliders) {
+  const group = new THREE.Group();
+  const stripes = [0xf2f2f2, 0xc0392b, 0xf2f2f2, 0xc0392b];
+  let y = 0;
+  for (const color of stripes) {
+    const band = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.6, 1.9, 4, 10),
+      new THREE.MeshLambertMaterial({ color })
+    );
+    band.position.y = y + 2;
+    group.add(band);
+    y += 4;
+  }
+  const lamp = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2, 1.2, 2, 10),
+    new THREE.MeshLambertMaterial({ color: 0xffe08a, emissive: 0xffd23c, emissiveIntensity: 0.8 })
+  );
+  lamp.position.y = y + 1;
+  group.add(lamp);
+  const cap = new THREE.Mesh(
+    new THREE.ConeGeometry(1.8, 1.6, 10),
+    new THREE.MeshLambertMaterial({ color: 0x2c3e50 })
+  );
+  cap.position.y = y + 2.8;
+  group.add(cap);
+  group.position.set(x, 0, z);
+  group.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+  scene.add(group);
+  colliders.push({ minX: x - 2, maxX: x + 2, minZ: z - 2, maxZ: z + 2 });
+}
+
+// A billboard over the plaza advertising the city itself.
+function raiseBillboard(THREE, scene, x, z, colliders) {
+  const post = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 8, 0.8),
+    new THREE.MeshLambertMaterial({ color: 0x4a4a4a })
+  );
+  post.position.set(x, 4, z);
+  post.castShadow = true;
+  scene.add(post);
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(12, 4, 0.4),
+    new THREE.MeshLambertMaterial({ color: 0x1e6fa8 })
+  );
+  board.position.set(x, 10, z);
+  board.castShadow = true;
+  scene.add(board);
+  colliders.push({ minX: x - 0.4, maxX: x + 0.4, minZ: z - 0.4, maxZ: z + 0.4 });
+}
+
 function makePalm(THREE, rng, x, z) {
   const group = new THREE.Group();
   const lean = rng.range(-0.12, 0.12);
@@ -246,6 +298,11 @@ export function initCity(G) {
     { x: 60, z: -60, h: 50, color: '#c9a37e' },
   ];
   for (const t of towerSpots) raiseTower(THREE, scene, rng, t, colliders);
+
+  // A lighthouse at the end of the beach and a billboard over the
+  // plaza — two landmarks that read from anywhere in the city.
+  raiseLighthouse(THREE, scene, 168, 78, colliders);
+  raiseBillboard(THREE, scene, 20, 4, colliders);
 
   // Palms: a ring around the plaza, and a line down the beach.
   const palmSpots = [];

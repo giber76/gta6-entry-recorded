@@ -7,7 +7,7 @@
 import { ROADS } from './city.js';
 import { makeRng } from './util.js';
 import { createCar, damageCar } from './vehicles.js';
-import { carExhaust } from './effects.js';
+import { carExhaust, emitBurningSmoke } from './effects.js';
 
 const CARS_ON_ROAD = 10;
 const PAINT_JOBS = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f, 0x8e44ad, 0x95a5a6, 0xe67e22, 0xd5dbdb];
@@ -159,10 +159,14 @@ export function updateTraffic(G, dt) {
     ride.group.rotation.y = ride.heading;
     const spin = brain.speed * dt * 2.6;
     for (const w of ride.wheels) w.rotation.x += spin;
-    // A hurt traffic car smokes, and a burning one keeps losing health.
+    // A hurt traffic car smokes, and a burning one vents a plume and
+    // keeps losing health until it wrecks.
     if (ride.health < 50 && ride.health > 0) {
       carExhaust(G, ride, dt);
-      if (ride.health < 25) damageCar(G, ride, 2 * dt);
+      if (ride.health < 25) {
+        emitBurningSmoke(G, ride.pos.x, ride.pos.z, dt);
+        damageCar(G, ride, 2 * dt);
+      }
     }
   }
 }
