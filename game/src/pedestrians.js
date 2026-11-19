@@ -1,6 +1,7 @@
 // pedestrians.js — sidewalk walkers who stroll the city and scatter from
-// speeding cars and gunshots. A walker hit by a fast car is knocked down,
-// and that draws the law.
+// speeding cars, gunshots and explosions. A walker hit by a fast car is
+// knocked down, and that draws the law — and the walkers nearby scatter
+// when they see it happen.
 
 import { ROADS } from './city.js';
 import { makeRng, clamp } from './util.js';
@@ -79,17 +80,26 @@ export function scatterPeds(G, x, z, radius) {
   }
 }
 
-// Which way this walker is walking right now: fleeing (from a car or a
-// shot) or strolling along its road. Returns [mx, mz, speed].
+// Set one walker fleeing away from a point, for `seconds`.
+function fleeFrom(walker, x, z, seconds) {
+  const dx = walker.pos.x - x;
+  const dz = walker.pos.z - z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.01) return false;
+  walker.flee = seconds;
+  walker.fleeX = dx / d;
+  walker.fleeZ = dz / d;
+  return true;
+}
+
+// Which way this walker is walking right now: fleeing (from a car, a
+// shot or an explosion) or strolling along its road. Returns [mx, mz, speed].
 function walkDirection(G, walker) {
   if (walker.flee > 0) return [walker.fleeX, walker.fleeZ, 6.5];
   const p = G.player;
   if (p.inCar && p.car && Math.abs(p.car.speed) > 12) {
     const d = Math.hypot(walker.pos.x - p.car.pos.x, walker.pos.z - p.car.pos.z);
-    if (d < 11 && d > 0.01) {
-      walker.flee = 2.5;
-      walker.fleeX = (walker.pos.x - p.car.pos.x) / d;
-      walker.fleeZ = (walker.pos.z - p.car.pos.z) / d;
+    if (d < 11 && fleeFrom(walker, p.car.pos.x, p.car.pos.z, 2.5)) {
       return [walker.fleeX, walker.fleeZ, 6.5];
     }
   }
@@ -98,6 +108,7 @@ function walkDirection(G, walker) {
 }
 
 // A fast player car hitting a walker knocks them down and draws the law.
+// The walkers nearby see it happen and scatter.
 function carHitsWalker(G, walker) {
   const p = G.player;
   if (!p.inCar || !p.car || Math.abs(p.car.speed) <= 5) return;
@@ -105,6 +116,7 @@ function carHitsWalker(G, walker) {
   if (d >= 2.4) return;
   walker.down = 4;
   walker.group.rotation.x = -Math.PI / 2;
+  scatterPeds(G, walker.pos.x, walker.pos.z, 15);
   if (G.onPedHit) G.onPedHit(walker);
 }
 

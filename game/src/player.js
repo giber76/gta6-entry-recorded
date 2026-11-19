@@ -1,6 +1,7 @@
 // player.js — Marlo Vance on foot: WASD movement, sprint, and the
 // third-person camera. Driving lives in vehicles.js; this file only moves
-// Marlo while he is walking.
+// Marlo while he is walking. The camera shakes when the world does
+// (explosions, hard hits) — G.shake is set by effects and decays there.
 
 import { collideCircle } from './city.js';
 import { clamp as clampNum, turnToward } from './util.js';
@@ -95,9 +96,11 @@ function settleLimbs(p) {
 
 export function updatePlayer(G, dt) {
   const p = G.player;
-  if (p.inCar || p.health <= 0) return;
+  // Cooldowns tick even while driving, so the pistol can be fired again
+  // from the car (a drive-by that only ever fires once is no drive-by).
   p.punchCooldown = Math.max(0, p.punchCooldown - dt);
   p.shootCooldown = Math.max(0, p.shootCooldown - dt);
+  if (p.inCar || p.health <= 0) return;
 
   const sprint = G.sprinting();
   const speed = sprint ? SPRINT_SPEED : WALK_SPEED;
@@ -135,10 +138,10 @@ function cameraRig(G, dt) {
 }
 
 // Third-person orbit camera. Drag the mouse to look; while driving it
-// trails behind the car so turns feel smooth.
+// trails behind the car so turns feel smooth. The shake offset is applied
+// after the smoothing, so an explosion punches through the follow.
 export function updateCamera(G, dt) {
   const THREE = window.THREE;
-  const p = G.player;
   G.camYaw -= G.lookDX * 0.005;
   G.camPitch = clampNum((G.camPitch ?? 0.32) - G.lookDY * 0.004, -0.15, 1.1);
   G.lookDX = 0;
@@ -155,6 +158,12 @@ export function updateCamera(G, dt) {
   const camPos = new THREE.Vector3(cx, Math.max(cy, 1.2), cz);
   G.camera.position.lerp(camPos, Math.min(1, dt * 10));
   G.camera.lookAt(target.x, (target.y || 0) + 1.6, target.z);
+  const shake = G.shake ?? 0;
+  if (shake > 0) {
+    G.camera.position.x += (Math.random() - 0.5) * shake * 0.9;
+    G.camera.position.y += (Math.random() - 0.5) * shake * 0.6;
+    G.camera.position.z += (Math.random() - 0.5) * shake * 0.9;
+  }
 }
 
 export function damagePlayer(G, amount, cause) {

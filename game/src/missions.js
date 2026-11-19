@@ -1,10 +1,13 @@
-// missions.js — the five-job story chain for Marlo Vance and his fixer
+// missions.js — the six-job story chain for Marlo Vance and his fixer
 // Rico Salas. A beacon marks the current objective; dialogue advances on
 // ENTER or after 8 s. Each mission owns a setup and a completion rule.
+// The pier ambush Vipers leave when the package is delivered, so the
+// story never leaves stray gunmen behind.
 
 import { LOCATIONS } from './city.js';
 import { setWanted } from './police.js';
 import { spawnEnemy, livingEnemies } from './combat.js';
+import { respawnBossCoupe } from './vehicles.js';
 
 function job(name, reward, ...brief) {
   return { name, reward, brief };
@@ -35,6 +38,11 @@ export const MISSIONS = [
     'The Big Score', 3000,
     'RICO: Meridian Bank. In, grab the cash, out. Four seconds at the vault, no more.',
     'RICO: The whole bay will come down on you. Lose them at the boardwalk safehouse.'
+  ),
+  job(
+    'The Last Job', 5000,
+    'RICO: One last job, Marlo. The Viper boss parks his black coupe on Marina East. Two of his boys watch it.',
+    'RICO: Take it, lose the heat, and bring it to my garage. Then we are done.'
   ),
 ];
 
@@ -152,6 +160,17 @@ const SETUPS = [
     const L = LOCATIONS;
     aimBeacon(G, L.bank.x, L.bank.z, 'Get to Meridian Bank and hold E at the vault');
   },
+  // 6 — The Last Job: steal the Viper boss's black coupe from Marina East.
+  (G) => {
+    const L = LOCATIONS;
+    respawnBossCoupe(G);
+    const spots = [
+      [L.marina.x - 6, L.marina.z - 4],
+      [L.marina.x + 5, L.marina.z + 3],
+    ];
+    for (const [x, z] of spots) spawnEnemy(G, x, z, 5);
+    aimBeacon(G, L.bossCoupe.x, L.bossCoupe.z, 'Steal the black coupe from Marina East');
+  },
 ];
 
 export function startMission(G, index) {
@@ -177,6 +196,13 @@ export function completeMission(G) {
   }
   if (G.saveGame) G.saveGame();
   G.mission.done = true;
+  // The pier ambush Vipers leave when the package is delivered.
+  if (G.mission.index === 2) {
+    for (const e of livingEnemies(G).filter((e) => e.missionTag === 2)) {
+      G.scene.remove(e.group);
+    }
+    G.enemies = G.enemies.filter((e) => e.missionTag !== 2);
+  }
   const next = G.mission.index + 1;
   if (next >= MISSIONS.length) {
     G.state = 'won';
@@ -188,14 +214,14 @@ export function completeMission(G) {
 }
 
 // --- per-mission completion rules --------------------------------------------
-// 1 — Wheels for Rico. Stage 0: steal the coupe (any mission coupe will
-// do). Stage 1: drive it to Rico's garage.
+// 1 — Wheels for Rico. Stage 0: steal the orange coupe. Stage 1: drive
+// it to Rico's garage.
 function ruleWheels(G) {
   const m = G.mission;
   const p = G.player;
   const L = LOCATIONS;
   if (m.stage === 1) return distTo(p, L.garage.x, L.garage.z) < 9 && p.inCar;
-  if (p.inCar && p.car && p.car.mission) {
+  if (p.inCar && p.car && p.car.mission === 'orange') {
     m.stage = 1;
     aimBeacon(G, L.garage.x, L.garage.z, 'Drive the coupe to Rico\u2019s Garage on Harbor Road');
     showDialogue(G, ['RICO: Good. Now bring it home, nice and easy.']);
@@ -270,7 +296,24 @@ function ruleScore(G, dt) {
   return false;
 }
 
-const RULES = [ruleWheels, ruleHeat, rulePackage, ruleNest, ruleScore];
+// 6 — The Last Job. Stage 0: steal the black boss coupe (two Vipers guard
+// it). Stage 1: the theft is hot — wanted jumps to 2 — drive it to Rico's
+// garage to finish the story.
+function ruleLastJob(G) {
+  const m = G.mission;
+  const p = G.player;
+  const L = LOCATIONS;
+  if (m.stage === 1) return distTo(p, L.garage.x, L.garage.z) < 9 && p.inCar;
+  if (p.inCar && p.car && p.car.mission === 'boss') {
+    m.stage = 1;
+    setWanted(G, 2);
+    aimBeacon(G, L.garage.x, L.garage.z, 'Drive the black coupe to Rico\u2019s Garage on Harbor Road');
+    showDialogue(G, ['RICO: That is the boss\u2019s own car. The whole bay will want it back — drive!']);
+  }
+  return false;
+}
+
+const RULES = [ruleWheels, ruleHeat, rulePackage, ruleNest, ruleScore, ruleLastJob];
 
 function missionDone(G, dt) {
   return RULES[G.mission.index](G, dt);

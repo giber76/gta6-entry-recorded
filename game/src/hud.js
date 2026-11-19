@@ -1,5 +1,7 @@
 // hud.js — the Solara Bay HUD: health, cash, wanted stars, objective,
-// prompts, dialogue, toasts, speed and the menu / pause / busted / win screens.
+// prompts, dialogue, toasts, speed, car health and the radio, plus the
+// menu / pause / busted / win screens. The damage flash that vignettes
+// the screen when Marlo is hurt is driven here, off G.hudFlash.
 
 import { nearestParkedCar } from './vehicles.js';
 
@@ -32,6 +34,12 @@ export function createHud(G) {
     speedEl: grab('speed'),
     weaponEl: grab('weapon'),
     missionEl: grab('mission-name'),
+    carHealthEl: grab('car-health'),
+    carHealthFill: grab('car-health-fill'),
+    carHealthText: grab('car-health-text'),
+    radioEl: grab('radio'),
+    flashEl: grab('damage-flash'),
+    crosshairEl: grab('crosshair'),
     screens: {
       start: grab('screen-start'),
       pause: grab('screen-pause'),
@@ -88,6 +96,23 @@ export function createHud(G) {
     hud.weaponEl.textContent = w === 'pistol' ? 'PISTOL [Q]' : 'FISTS [Q]';
   };
 
+  // Car health bar, shown only while driving.
+  hud.setCarHealth = function setCarHealth(h) {
+    if (h == null) {
+      hud.carHealthEl.style.display = 'none';
+      return;
+    }
+    hud.carHealthEl.style.display = 'block';
+    const pct = Math.max(0, Math.min(100, h));
+    hud.carHealthFill.style.width = `${pct}%`;
+    hud.carHealthFill.style.background = healthColor(h);
+    hud.carHealthText.textContent = `${Math.ceil(h)}`;
+  };
+
+  hud.setRadio = function setRadio(text) {
+    hud.radioEl.textContent = text;
+  };
+
   hud.toast = function toast(text) {
     const div = document.createElement('div');
     div.className = 'toast';
@@ -125,6 +150,8 @@ function currentPrompt(G) {
   let prompt = '';
   if (p.inCar) {
     prompt = '[E] Get out    [SPACE] Handbrake';
+    if (p.hasPistol && p.weapon === 'pistol') prompt += '    [Click] Drive-by shoot';
+    prompt += '    [R] Radio    [Z/X] Map zoom';
   } else {
     const near = nearestParkedCar(G);
     if (near) {
@@ -140,10 +167,12 @@ function currentPrompt(G) {
   }
   if (p.hasPistol) prompt += '    [Q] Switch weapon    [Click] Shoot';
   else if (!p.inCar) prompt += '    [Q] Fists    [Click] Punch';
+  if (!p.inCar) prompt += '    [R] Radio    [Z/X] Map zoom';
   return prompt;
 }
 
-// Per-frame HUD refresh: health, cash, objective distance, speed, prompts.
+// Per-frame HUD refresh: health, cash, objective distance, speed, car
+// health, radio, prompts, and the damage flash fading out.
 export function updateHud(G, dt) {
   const hud = G.hud;
   const p = G.player;
@@ -153,12 +182,21 @@ export function updateHud(G, dt) {
   hud.setWeapon(p.hasPistol ? p.weapon : 'fists');
   const speedKmh = p.inCar && p.car ? Math.abs(p.car.speed) * 3.6 : p.speed * 3.6;
   hud.setSpeed(speedKmh);
+  hud.setCarHealth(p.inCar && p.car ? p.car.health : null);
+  hud.setRadio(G.audio ? G.audio.radioLabel() : 'RADIO OFF');
   const m = G.mission;
   const dist = m.target ? Math.hypot(p.pos.x - m.target.x, p.pos.z - m.target.z) : null;
   hud.setObjective(m.objective, dist);
   hud.setPrompt(currentPrompt(G));
   hud.tickToasts(dt);
-  // Crosshair shows only on foot with the pistol out.
-  grab('crosshair').style.display =
-    G.state === 'playing' && !p.inCar && p.hasPistol && p.weapon === 'pistol' ? 'block' : 'none';
+  // Damage flash: G.hudFlash is set to 1 when Marlo is hurt and fades here.
+  if (G.hudFlash > 0) {
+    hud.flashEl.style.opacity = String(G.hudFlash * 0.9);
+    G.hudFlash = Math.max(0, G.hudFlash - dt * 2);
+  } else {
+    hud.flashEl.style.opacity = '0';
+  }
+  // Crosshair shows with the pistol out, on foot or driving (drive-by).
+  hud.crosshairEl.style.display =
+    G.state === 'playing' && p.hasPistol && p.weapon === 'pistol' ? 'block' : 'none';
 }

@@ -1,13 +1,14 @@
 // input.js — keyboard and mouse for Solara Bay.
 //
 // WASD move and drive, mouse drag to look around, SPACE handbrake, E to
-// interact, Q to switch weapon, SHIFT to sprint, P or ESC to pause, M for
-// the mission list. The pistol never needs reloading, so there is no
-// reload key. Keys live in a Set on the game object; the game reads them
-// each frame through moveInput() and sprinting().
+// interact, Q to switch weapon, R to cycle the radio, Z/X to zoom the
+// minimap, SHIFT to sprint, P or ESC to pause, M for the mission list.
+// The pistol never needs reloading, so there is no reload key. Keys live
+// in a Set on the game object; the game reads them each frame through
+// moveInput() and sprinting().
 
 const HANDLED_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'KeyM', 'KeyP',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'KeyM', 'KeyP', 'KeyR', 'KeyZ', 'KeyX',
   'Space', 'ShiftLeft', 'ShiftRight', 'Escape', 'Enter',
 ]);
 
@@ -18,6 +19,9 @@ const PRESS_ACTIONS = {
   Escape: 'onPauseKey',
   KeyM: 'onMissionKey',
   KeyQ: 'onWeaponKey',
+  KeyR: 'onRadioKey',
+  KeyZ: 'onMapZoomIn',
+  KeyX: 'onMapZoomOut',
 };
 
 export function initInput(G) {

@@ -1,20 +1,28 @@
 // combat.js — fists, the pistol, and the Crimson Vipers.
 //
-// Marlo fights on foot only. Fists reach 2.4 u and hit for 25; the pistol
-// reaches 70 u and hits for 34, so a Viper (100 health) falls to three
-// shots. Enemies close to 15 u, then stand and shoot with poor aim —
-// about one shot in four lands, for 6 damage. Dead enemies fall and fade
-// after 1.2 s. Tracers are thin yellow lines that live 0.09 s.
+// Marlo fights on foot, and with the pistol he fights from the car too:
+// a drive-by aims along the camera, so dragging the mouse sideways lets
+// him shoot out of the window. Fists reach 2.4 u and hit for 25; the
+// pistol reaches 70 u and hits for 34, so a Viper (100 health) falls to
+// three shots. A pistol round does 15 damage to a car body. Enemies close
+// to 15 u, then strafe sideways and shoot with poor aim — about one shot
+// in four lands, for 6 damage. Dead enemies fall and fade after 1.2 s.
+// Tracers are thin yellow lines that live 0.09 s.
 
 import { scatterPeds } from './pedestrians.js';
 import { damagePlayer } from './player.js';
+import { damageCar } from './vehicles.js';
+import { spawnSparks, muzzleFlash } from './effects.js';
 
 const WEAPONS = {
   fists: { damage: 25, reach: 2.4, cooldown: 0.4 },
   pistol: { damage: 34, reach: 70, cooldown: 0.25 },
 };
+const CAR_SHOT_DAMAGE = 15;
 const VIPER_HEALTH = 100;
 const VIPER_ADVANCE = 5.5;
+const VIPER_STRAFE = 3.5;
+const VIPER_TOO_CLOSE = 6;
 const VIPER_SHOOT_RANGE = 40;
 const VIPER_NOTICE_RANGE = 45;
 const VIPER_STANDOFF = 15;
@@ -73,6 +81,8 @@ export function spawnEnemy(G, x, z, missionTag) {
     missionTag: missionTag ?? null,
     shootCooldown: 1 + Math.random(),
     walkPhase: Math.random() * 6,
+    strafeDir: Math.random() < 0.5 ? 1 : -1,
+    strafeTimer: 0.5 + Math.random(),
     dead: false,
     deadTimer: 0,
   };
@@ -92,9 +102,13 @@ function drawTracer(G, from, to) {
   G.tracers.push({ line, life: TRACER_LIFE });
 }
 
+// Where a shot starts: Marlo's shoulder on foot, the car window while
+// driving. Aims along his facing on foot, along the camera while driving.
 function gunMuzzle(G) {
+  const THREE = window.THREE;
   const p = G.player;
-  const fwd = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+  const yaw = p.inCar ? G.camYaw : p.yaw;
+  const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
   return new THREE.Vector3(p.pos.x + fwd.x * 0.8, 1.35, p.pos.z + fwd.z * 0.8);
 }
 
@@ -134,43 +148,81 @@ function throwPunch(G) {
   mark.pos.z += Math.cos(p.yaw) * 2;
 }
 
+// The nearest car body the ray hits, or null. The car Marlo is driving
+// is never a target — a drive-by must not shoot his own car.
+function raycastCars(G, origin, dir) {
+  const cars = [...(G.policeCars || []), ...(G.trafficCars || []), ...(G.parkedCars || [])];
+  let best = null;
+  for (const car of cars) {
+    if (car.wrecked || car.dead || car.isPlayer) continue;
+    G.raycaster.set(origin, dir);
+    G.raycaster.far = WEAPONS.pistol.reach;
+    const hits = G.raycaster.intersectObject(car.group, true);
+    if (hits.length > 0 && (!best || hits[0].distance < best.distance)) {
+      best = { car, hit: hits[0] };
+    }
+  }
+  return best;
+}
+
 function firePistol(G) {
   const THREE = window.THREE;
   const p = G.player;
-  if (p.shootCooldown > 0) return;
+  if (p.shootCooldown > 0) return { fired: false, reason: 'cooldown', cooldown: p.shootCooldown };
   p.shootCooldown = WEAPONS.pistol.cooldown;
   if (G.audio) G.audio.shot();
   scatterPeds(G, p.pos.x, p.pos.z, 25);
-  // Aim from Marlo's shoulder along his facing: the crosshair sits on
-  // whatever he is facing.
+  // Aim from the muzzle along the facing (on foot) or the camera (driving):
+  // the crosshair sits on whatever is being aimed at.
+  const yaw = p.inCar ? G.camYaw : p.yaw;
   const origin = new THREE.Vector3(p.pos.x, 1.35, p.pos.z);
-  const dir = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+  const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  muzzleFlash(G, origin.x + dir.x * 0.8, 1.35, origin.z + dir.z * 0.8);
   G.raycaster.set(origin, dir);
   G.raycaster.far = WEAPONS.pistol.reach;
   const bodies = [];
   for (const e of livingEnemies(G)) bodies.push(e.body);
-  const hits = G.raycaster.intersectObjects(bodies, false);
+  const enemyHits = G.raycaster.intersectObjects(bodies, false);
+  const carHit = raycastCars(G, origin, dir);
   let end;
-  if (hits.length > 0) {
-    const hit = hits[0];
+  const enemyDist = enemyHits.length > 0 ? enemyHits[0].distance : Infinity;
+  const carDist = carHit ? carHit.hit.distance : Infinity;
+  let result = { fired: true, hit: 'none', yaw, origin: [origin.x, origin.z] };
+  if (enemyDist < carDist) {
+    const hit = enemyHits[0];
     end = hit.point.clone();
     const viper = livingEnemies(G).find((e) => e.body === hit.object);
     if (viper) damageEnemy(G, viper, WEAPONS.pistol.damage);
+    result.hit = 'enemy';
+    result.dist = enemyDist;
+  } else if (carHit) {
+    end = carHit.hit.point.clone();
+    spawnSparks(G, end.x, end.y, end.z);
+    damageCar(G, carHit.car, CAR_SHOT_DAMAGE);
+    result.hit = 'car';
+    result.dist = carDist;
+    result.carHealth = carHit.car.health;
+    result.carWrecked = carHit.car.wrecked;
   } else {
     end = origin.clone().add(dir.multiplyScalar(WEAPONS.pistol.reach));
   }
   drawTracer(G, gunMuzzle(G), end);
+  return result;
 }
 
-// Marlo attacks on foot only: fists or the pistol, by his current weapon.
+// Marlo attacks: fists on foot only; the pistol works on foot and from
+// the driver's seat (a drive-by, aimed along the camera). Returns what
+// the attack did, for the debug hooks.
 export function playerAttack(G) {
   const p = G.player;
-  if (G.state !== 'playing' || p.inCar || p.health <= 0) return;
+  if (G.state !== 'playing' || p.health <= 0) return { fired: false, reason: 'not-playing' };
   if (p.weapon === 'fists') {
+    if (p.inCar) return { fired: false, reason: 'fists-in-car' };
     throwPunch(G);
-    return;
+    return { fired: true, hit: 'punch' };
   }
-  if (p.weapon === 'pistol' && p.hasPistol) firePistol(G);
+  if (p.weapon === 'pistol' && p.hasPistol) return firePistol(G);
+  return { fired: false, reason: 'no-pistol' };
 }
 
 export function damageEnemy(G, enemy, amount) {
@@ -183,12 +235,35 @@ export function damageEnemy(G, enemy, amount) {
   if (G.onEnemyKilled) G.onEnemyKilled(enemy);
 }
 
-// Walk a Viper toward Marlo until it is inside its standoff range.
+// Walk a Viper toward Marlo until it is inside its standoff range; once
+// there it strafes sideways and backs off if Marlo closes in, instead of
+// standing still to be shot.
 function advanceViper(e, dx, dz, gap, dt) {
-  if (gap <= VIPER_STANDOFF) return;
-  const step = VIPER_ADVANCE * dt;
-  e.pos.x += (dx / gap) * step;
-  e.pos.z += (dz / gap) * step;
+  if (gap > VIPER_STANDOFF) {
+    const step = VIPER_ADVANCE * dt;
+    e.pos.x += (dx / gap) * step;
+    e.pos.z += (dz / gap) * step;
+    e.walkPhase += dt * 9;
+    const swing = Math.sin(e.walkPhase) * 0.5;
+    e.legL.rotation.x = swing;
+    e.legR.rotation.x = -swing;
+    return;
+  }
+  e.strafeTimer -= dt;
+  if (e.strafeTimer <= 0) {
+    e.strafeTimer = 0.8 + Math.random() * 1.2;
+    e.strafeDir = Math.random() < 0.5 ? 1 : -1;
+  }
+  // Sidestep perpendicular to the line to Marlo; back away when too close.
+  let mx = (-dz / gap) * e.strafeDir;
+  let mz = (dx / gap) * e.strafeDir;
+  if (gap < VIPER_TOO_CLOSE) {
+    mx -= (dx / gap) * 0.8;
+    mz -= (dz / gap) * 0.8;
+  }
+  const step = VIPER_STRAFE * dt;
+  e.pos.x += mx * step;
+  e.pos.z += mz * step;
   e.walkPhase += dt * 9;
   const swing = Math.sin(e.walkPhase) * 0.5;
   e.legL.rotation.x = swing;

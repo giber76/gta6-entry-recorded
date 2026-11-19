@@ -2,7 +2,9 @@
 //
 // Stars run 0–5. Police cars chase and ram; foot officers chase and punch,
 // but only while Marlo is on foot. Stars fall one per 10 s, and only while
-// no pursuer can see him.
+// no pursuer can see him. A ram hurts Marlo and both cars: a police car
+// that rams too often wrecks itself, and a wrecked police car is not
+// replaced for 8 s — destroying a pursuer buys real breathing room.
 //
 // Why "Lose the Heat" is winnable at all: a fleeing car is faster than any
 // police car (38 vs 30 at best), a ram costs health but never touches the
@@ -11,7 +13,7 @@
 // the heat never lets go.
 
 import { nearestRoadPoint, collideCircle } from './city.js';
-import { createCar } from './vehicles.js';
+import { createCar, damageCar } from './vehicles.js';
 import { damagePlayer } from './player.js';
 
 const TUNING = {
@@ -21,6 +23,8 @@ const TUNING = {
   spawnDistance: 95,
   spawnMinDistance: 80,
   ramDamage: 4,
+  ramCarDamage: 6,
+  ramSelfDamage: 3,
   ramCooldown: 3.0,
   ramRange: 3.4,
   officerPunchDamage: 6,
@@ -28,8 +32,10 @@ const TUNING = {
   officerSpeed: 7,
   officerSpawnDistance: 18,
   maxCars: 3,
+  maxCarsHigh: 4,
   maxOfficers: 2,
   turnRate: 2.4,
+  respawnDelay: 8,
 };
 
 function clamp(v, lo, hi) {
@@ -41,6 +47,13 @@ export function initPolice(G) {
   G.wantedTimer = 0;
   G.policeCars = [];
   G.officers = [];
+  G.policeRespawnAt = 0;
+  // A wrecked police car is not replaced for respawnDelay seconds, so
+  // destroying a pursuer buys a real breather instead of a fresh car.
+  G.onPoliceCarWrecked = () => {
+    G.policeRespawnAt = (G.elapsed ?? 0) + TUNING.respawnDelay;
+    if (G.hud) G.hud.toast('Police car destroyed!');
+  };
 }
 
 export function setWanted(G, level) {
@@ -135,10 +148,13 @@ function anyoneSees(G) {
   return false;
 }
 
-// Keep the roster at the wanted level: up to 3 cars, up to 2 officers.
-// Extra units leave when the heat drops.
+// Keep the roster at the wanted level: up to 3 cars (4 at wanted 4–5),
+// up to 2 officers. Extra units leave when the heat drops. No new car
+// spawns while a wreck's respawn cooldown is running.
 function syncRoster(G) {
-  const wantCars = G.wanted > 0 ? Math.min(TUNING.maxCars, G.wanted) : 0;
+  const cap = G.wanted >= 4 ? TUNING.maxCarsHigh : TUNING.maxCars;
+  let wantCars = G.wanted > 0 ? Math.min(cap, G.wanted) : 0;
+  if ((G.elapsed ?? 0) < (G.policeRespawnAt ?? 0)) wantCars = Math.min(wantCars, G.policeCars.length);
   while (G.policeCars.length < wantCars) spawnPoliceCar(G);
   while (G.policeCars.length > wantCars) dropPoliceCar(G, G.policeCars[G.policeCars.length - 1]);
   const wantOfficers = G.wanted > 0 ? Math.min(TUNING.maxOfficers, G.wanted) : 0;
@@ -170,9 +186,9 @@ function chaseSpeed(gap) {
   return 20;
 }
 
-// Ram: contact hurts, but it never slows the player's car — that was the
-// pin that made losing the heat impossible. A rammed driver keeps their
-// speed and can still break away.
+// Ram: contact hurts Marlo and both cars, but it never slows the player's
+// car — that was the pin that made losing the heat impossible. A rammed
+// driver keeps their speed and can still break away.
 function ramPlayer(G, car, gap, dt) {
   car.policeAI.ramCooldown -= dt;
   if (gap >= TUNING.ramRange || car.policeAI.ramCooldown > 0) return;
@@ -180,6 +196,8 @@ function ramPlayer(G, car, gap, dt) {
   const p = G.player;
   if (p.inCar && p.car) {
     damagePlayer(G, TUNING.ramDamage, 'rammed by police');
+    damageCar(G, p.car, TUNING.ramCarDamage);
+    damageCar(G, car, TUNING.ramSelfDamage);
   } else {
     damagePlayer(G, TUNING.officerPunchDamage, 'rammed by police');
     const shove = 6;
@@ -190,6 +208,7 @@ function ramPlayer(G, car, gap, dt) {
 }
 
 function drivePoliceCar(G, car, dt) {
+  if (car.wrecked) return;
   const p = G.player;
   const dx = p.pos.x - car.pos.x;
   const dz = p.pos.z - car.pos.z;
@@ -248,7 +267,7 @@ export function updatePolice(G, dt) {
   if (G.state !== 'playing') return;
   syncRoster(G);
   decayWanted(G, dt);
-  for (const car of G.policeCars) drivePoliceCar(G, car, dt);
+  for (const car of [...G.policeCars]) drivePoliceCar(G, car, dt);
   for (const o of G.officers) walkOfficer(G, o, dt);
 }
 

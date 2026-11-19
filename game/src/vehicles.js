@@ -1,20 +1,29 @@
 // vehicles.js — the car factory and arcade driving for Solara Bay.
 //
 // Accelerate, brake, reverse and handbrake; buildings push the car out;
-// bumps with traffic slow both cars. Stealing a parked car only draws the
-// law if someone sees it (police.js decides that).
+// bumps with traffic slow both cars. Cars take damage: hard building hits,
+// police rams and bullets wear a car down. A smoking car is hurt; a
+// burning car is about to explode — and a wrecked car is gone for good
+// (traffic respawns, the boss coupe is re-dealt when its job starts).
+// Stealing a parked car only draws the law if someone sees it (police.js
+// decides that).
 
 import { clamp } from './util.js';
 import { collideCircle } from './city.js';
+import { spawnExplosion, spawnSmokePuff, spawnFirePuff } from './effects.js';
+import { scatterPeds } from './pedestrians.js';
+import { damagePlayer } from './player.js';
 
 const PAINT_POOL = [0xc0392b, 0x2e86c1, 0x27ae60, 0xf1c40f, 0x8e44ad, 0x95a5a6, 0xe67e22, 0x16a085];
 const PARKED_SPOTS = [
-  { x: 27, z: 26, heading: -Math.PI / 2, color: 0xff7f11, mission: true },
+  { x: 27, z: 26, heading: -Math.PI / 2, color: 0xff7f11, mission: 'orange' },
   { x: -46, z: 6, heading: 0, color: 0x2e86c1 },
   { x: 86, z: -46, heading: Math.PI / 2, color: 0x27ae60 },
   { x: -86, z: 84, heading: Math.PI, color: 0x8e44ad },
   { x: 44, z: 124, heading: -Math.PI / 2, color: 0xf1c40f },
+  { x: 128, z: 48, heading: Math.PI, color: 0x111111, mission: 'boss' },
 ];
+const BOSS_SPOT = PARKED_SPOTS[PARKED_SPOTS.length - 1];
 
 // Body parts as [geometry, material, x, y, z, castShadow?] — one loop
 // builds the shell, cabin and roof instead of three copy-pasted blocks.
@@ -107,6 +116,11 @@ export function createCar(G, opts) {
     isPlayer: false,
     parked: !!opts.parked,
     dead: false,
+    health: 100,
+    wrecked: false,
+    smokeTimer: 0,
+    tireTimer: 0,
+    bumpCooldown: 0,
   };
   // Driving model: police cars are a little faster than civilian ones.
   car.topSpeed = opts.police ? 42 : 38;
@@ -118,15 +132,79 @@ export function createCar(G, opts) {
   return car;
 }
 
-// Parked cars Marlo can steal, including the orange mission coupe by the plaza.
+// Parked cars Marlo can steal: the orange mission coupe by the plaza and
+// the black boss coupe at Marina East, plus four ordinary cars.
 export function spawnParkedCars(G) {
   G.parkedCars = PARKED_SPOTS.map((s) => {
     const car = createCar(G, { x: s.x, z: s.z, heading: s.heading, color: s.color, parked: true });
-    car.mission = !!s.mission;
+    car.mission = s.mission ?? null;
     return car;
   });
   G.missionCoupe = G.parkedCars[0];
   return G.parkedCars;
+}
+
+// The boss coupe for the last job: if it was wrecked earlier, deal it back
+// onto its Marina East spot so the job is always playable.
+export function respawnBossCoupe(G) {
+  const alive = (G.parkedCars || []).find((c) => c.mission === 'boss');
+  if (alive) {
+    alive.health = 100;
+    alive.wrecked = false;
+    alive.dead = false;
+    return alive;
+  }
+  const car = createCar(G, { x: BOSS_SPOT.x, z: BOSS_SPOT.z, heading: BOSS_SPOT.heading, color: BOSS_SPOT.color, parked: true });
+  car.mission = 'boss';
+  G.parkedCars.push(car);
+  return car;
+}
+
+// Repair every parked car (new game, respawn, continue): a wrecked mission
+// coupe must never make a job impossible.
+export function repairAllParked(G) {
+  for (const car of G.parkedCars || []) {
+    car.health = 100;
+    car.wrecked = false;
+    car.dead = false;
+  }
+}
+
+// Damage a car; at zero health it explodes and leaves the street.
+export function damageCar(G, car, amount) {
+  if (!car || car.wrecked || car.dead) return;
+  car.health -= amount;
+  if (car.health > 0) return;
+  wreckCar(G, car);
+}
+
+function wreckCar(G, car) {
+  car.wrecked = true;
+  car.dead = true;
+  car.health = 0;
+  spawnExplosion(G, car.pos.x, car.pos.z, true);
+  scatterPeds(G, car.pos.x, car.pos.z, 30);
+  G.scene.remove(car.group);
+  if (car.isPlayer) {
+    stepOut(G);
+    damagePlayer(G, 20, 'car exploded');
+    if (G.hud) G.hud.toast('Your car exploded!');
+  }
+  if (car.isPolice) {
+    G.policeCars = (G.policeCars || []).filter((c) => c !== car);
+    if (G.onPoliceCarWrecked) G.onPoliceCarWrecked(car);
+  } else if (car.traffic) {
+    G.trafficCars = (G.trafficCars || []).filter((c) => c !== car);
+    if (G.onTrafficCarWrecked) G.onTrafficCarWrecked(car);
+  } else if (car.parked) {
+    G.parkedCars = (G.parkedCars || []).filter((c) => c !== car);
+  }
+}
+
+// Repair one car back to full health (debug hook / respawn).
+export function repairCar(G, car) {
+  if (!car || car.wrecked) return;
+  car.health = 100;
 }
 
 // Push a car out of any building it overlaps; true when it was pushed.
@@ -138,9 +216,11 @@ function pushOutOfBuildings(G, car) {
   return true;
 }
 
-// Bump into traffic cars: both are pushed apart and slow down.
+// Bump into traffic cars: both are pushed apart and slow down. A hard
+// bump damages both cars, but only once per half-second per car.
 function bumpTraffic(G, car) {
   for (const t of G.trafficCars || []) {
+    if (t.wrecked) continue;
     const dx = car.pos.x - t.pos.x;
     const dz = car.pos.z - t.pos.z;
     const gap = Math.hypot(dx, dz);
@@ -153,6 +233,11 @@ function bumpTraffic(G, car) {
     if (Math.abs(car.speed) > 8) {
       car.speed *= 0.7;
       if (G.audio) G.audio.crash();
+      if (car.bumpCooldown <= 0) {
+        car.bumpCooldown = 0.5;
+        damageCar(G, car, 4);
+        damageCar(G, t, 6);
+      }
     }
   }
 }
@@ -194,6 +279,26 @@ function applySteering(car, input, dt) {
   car.heading += turnRate * dt * (input.handbrake ? 1.5 : 1);
 }
 
+// A damaged car smokes (under half health) and burns (under a quarter).
+// A handbrake turn at speed leaves tyre smoke at the rear wheels.
+function updateCarSmoke(G, car, input, dt) {
+  car.smokeTimer -= dt;
+  car.tireTimer -= dt;
+  car.bumpCooldown = Math.max(0, car.bumpCooldown - dt);
+  if (car.health < 50 && car.smokeTimer <= 0) {
+    car.smokeTimer = car.health < 25 ? 0.15 : 0.4;
+    spawnSmokePuff(G, car.pos.x, car.pos.z);
+    if (car.health < 25) spawnFirePuff(G, car.pos.x, car.pos.z);
+  }
+  if (input.handbrake && Math.abs(car.speed) > 10 && car.tireTimer <= 0) {
+    car.tireTimer = 0.08;
+    const backX = car.pos.x - Math.sin(car.heading) * 1.6;
+    const backZ = car.pos.z - Math.cos(car.heading) * 1.6;
+    spawnSmokePuff(G, backX, backZ);
+    if (G.audio) G.audio.skid();
+  }
+}
+
 export function updatePlayerCar(G, dt) {
   const p = G.player;
   const car = p.car;
@@ -204,10 +309,17 @@ export function updatePlayerCar(G, dt) {
   car.pos.x += Math.sin(car.heading) * car.speed * dt;
   car.pos.z += Math.cos(car.heading) * car.speed * dt;
   if (pushOutOfBuildings(G, car)) {
-    if (Math.abs(car.speed) > 6 && G.audio) G.audio.crash();
+    const impact = Math.abs(car.speed);
+    if (impact > 6 && G.audio) G.audio.crash();
+    if (impact > 10) {
+      damageCar(G, car, (impact - 10) * 0.8);
+      G.shake = Math.max(G.shake ?? 0, 0.4);
+    }
     car.speed *= 0.45;
   }
   bumpTraffic(G, car);
+  if (car.wrecked) return; // the car just exploded: Marlo is on foot now
+  updateCarSmoke(G, car, input, dt);
   car.group.rotation.y = car.heading;
   const spin = car.speed * dt * 2.6;
   for (const w of car.wheels) w.rotation.x += spin;
@@ -243,7 +355,7 @@ function nearestStealable(G) {
   let best = null;
   let bestD = 4.5;
   for (const car of G.parkedCars || []) {
-    if (car.dead) continue;
+    if (car.dead || car.wrecked) continue;
     const gap = Math.hypot(car.pos.x - p.pos.x, car.pos.z - p.pos.z);
     if (gap < bestD) {
       bestD = gap;

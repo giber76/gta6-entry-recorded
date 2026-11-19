@@ -3,7 +3,7 @@
 
 import { initCity } from './city.js';
 import { createPlayer, updatePlayer, updateCamera, damagePlayer } from './player.js';
-import { spawnParkedCars, updatePlayerCar, tryEnterExitCar } from './vehicles.js';
+import { spawnParkedCars, updatePlayerCar, tryEnterExitCar, repairAllParked } from './vehicles.js';
 import { spawnTraffic, updateTraffic } from './traffic.js';
 import { spawnPedestrians, updatePedestrians } from './pedestrians.js';
 import { initPolice, updatePolice, raiseWanted, theftWitnessed } from './police.js';
@@ -15,9 +15,10 @@ import { createAudio } from './audio.js';
 import { initInput } from './input.js';
 import { saveGame, loadSave, hasSave, clearSave } from './save.js';
 import { initDebug } from './debug.js';
+import { initEffects, updateEffects } from './effects.js';
 
 const THREE = window.THREE;
-const MISSION_NAMES = ['Wheels for Rico', 'Lose the Heat', 'The Package', 'Viper Nest', 'The Big Score'];
+const MISSION_NAMES = ['Wheels for Rico', 'Lose the Heat', 'The Package', 'Viper Nest', 'The Big Score', 'The Last Job'];
 
 const G = {
   state: 'menu',
@@ -25,6 +26,7 @@ const G = {
   camYaw: Math.PI,
   camPitch: 0.32,
   saveTimer: 0,
+  mapZoom: 1,
 };
 
 // --- renderer / scene -------------------------------------------------------
@@ -61,6 +63,7 @@ spawnTraffic(G);
 spawnPedestrians(G);
 initPolice(G);
 initCombat(G);
+initEffects(G);
 createHud(G);
 G.minimap = createMinimap(G);
 initMissions(G);
@@ -69,7 +72,8 @@ initDebug(G);
 G.saveGame = () => saveGame(G);
 
 // --- game events ------------------------------------------------------------
-// ENTER advances dialogue; P/ESC pauses; M shows the mission; Q swaps weapon.
+// ENTER advances dialogue; P/ESC pauses; M shows the mission; Q swaps weapon;
+// R cycles the radio; Z/X zoom the minimap.
 G.onEnter = () => {
   if (G.state === 'playing') advanceDialogue(G);
 };
@@ -86,7 +90,7 @@ G.onPauseKey = () => {
 G.onMissionKey = () => {
   if (G.state !== 'playing') return;
   const m = G.mission;
-  G.hud.toast(`Mission ${m.index + 1}/5: ${MISSION_NAMES[m.index]} — ${m.objective}`);
+  G.hud.toast(`Mission ${m.index + 1}/${MISSION_NAMES.length}: ${MISSION_NAMES[m.index]} — ${m.objective}`);
 };
 
 G.onWeaponKey = () => {
@@ -99,8 +103,27 @@ G.onWeaponKey = () => {
   G.hud.toast(p.weapon === 'pistol' ? 'Pistol out' : 'Fists out');
 };
 
+G.onRadioKey = () => {
+  if (G.state !== 'playing') return;
+  const label = G.audio.cycleStation();
+  G.hud.toast(label === 'RADIO OFF' ? 'Radio off' : `Radio — ${label}`);
+};
+
+G.onMapZoomIn = () => {
+  if (G.state !== 'playing') return;
+  G.mapZoom = G.mapZoom >= 4 ? 4 : G.mapZoom * 2;
+  G.hud.toast(`Map zoom x${G.mapZoom}`);
+};
+
+G.onMapZoomOut = () => {
+  if (G.state !== 'playing') return;
+  G.mapZoom = G.mapZoom <= 1 ? 1 : G.mapZoom / 2;
+  G.hud.toast(`Map zoom x${G.mapZoom}`);
+};
+
 G.onClick = () => {
-  if (G.state === 'playing') playerAttack(G);
+  if (G.state === 'playing') return playerAttack(G);
+  return null;
 };
 
 G.onCarStolen = (car) => {
@@ -139,7 +162,8 @@ G.onWin = () => {
 
 // --- start / continue / respawn --------------------------------------------
 // Shared reset used by new game, continue and respawn: put Marlo back on
-// his feet at the plaza steps with a clean slate.
+// his feet at the plaza steps with a clean slate, and repair every parked
+// car so a wrecked mission coupe can never block a job.
 function freshMarlo(G, cash, health) {
   const p = G.player;
   p.cash = cash;
@@ -155,6 +179,7 @@ function freshMarlo(G, cash, health) {
   G.wanted = 0;
   for (const e of G.enemies) G.scene.remove(e.group);
   G.enemies = [];
+  repairAllParked(G);
 }
 
 // Enter play from a menu button: reset, show the game, toast a greeting.
@@ -181,6 +206,8 @@ G.continueGame = () => {
   p.pos.x = data.x;
   p.pos.z = data.z;
   p.group.position.set(p.pos.x, 0, p.pos.z);
+  if (data.radioStation !== undefined) G.audio.setStation(data.radioStation);
+  if (data.mapZoom !== undefined) G.mapZoom = data.mapZoom;
   initMissions(G);
   // Restore the saved mission directly (earlier jobs are already paid).
   if (data.mission > 0) startMission(G, data.mission);
@@ -206,8 +233,8 @@ function refreshStartScreen() {
   btn.style.display = hasSave() ? 'block' : 'none';
   const save = loadSave();
   document.getElementById('start-sub').textContent = save
-    ? `Continue — $${save.cash.toLocaleString('en-US')}, mission ${save.mission + 1}/5`
-    : 'Five jobs. One city. No rules but Rico\u2019s.';
+    ? `Continue — $${save.cash.toLocaleString('en-US')}, mission ${save.mission + 1}/${MISSION_NAMES.length}`
+    : 'Six jobs. One city. No rules but Rico\u2019s.';
 }
 
 // --- menu buttons -----------------------------------------------------------
@@ -256,6 +283,7 @@ const PLAY_UPDATERS = [
   updatePedestrians,
   updatePolice,
   updateEnemies,
+  updateEffects,
   updateMissions,
   updateCamera,
   updateHud,
@@ -264,7 +292,7 @@ const PLAY_UPDATERS = [
 function tickPlaying(dt) {
   for (const step of PLAY_UPDATERS) step(G, dt);
   G.minimap.draw(G);
-  if (G.audio) G.audio.tick(dt, G.wanted);
+  if (G.audio) G.audio.tick(dt, G.wanted, G.state);
   // Autosave every 20 s.
   G.saveTimer += dt;
   if (G.saveTimer > 20) {
@@ -277,6 +305,7 @@ function tickIdle(dt) {
   // World idles behind the end screens.
   updateTraffic(G, dt);
   updatePedestrians(G, dt);
+  updateEffects(G, dt);
   updateCamera(G, dt);
 }
 

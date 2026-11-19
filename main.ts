@@ -3,7 +3,8 @@
 // Copies game/ and screenshots/ into the output directory and writes
 // dossier.json with buildDossier from the kit's vendor/makefun-game.ts.
 // Deterministic: the output directory is wiped first, so two runs write
-// the same bytes.
+// the same bytes. v2 polish: six jobs, car damage and explosions,
+// drive-by shooting, a three-station radio, minimap zoom.
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

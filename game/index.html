@@ -54,9 +54,20 @@
     border: 2px solid rgba(255,255,255,0.25); border-radius: 6px; background: #22262c;
   }
 
-  /* Bottom-left: weapon and speed. */
+  /* Bottom-left: weapon, car health, radio and speed. */
   #bottom-left { position: absolute; bottom: 16px; left: 14px; font-size: 14px; }
   #weapon { font-weight: bold; color: #ffd23c; }
+  #car-health { display: none; margin-top: 6px; }
+  #car-health-row {
+    display: flex; justify-content: space-between;
+    font-size: 11px; font-weight: bold; color: #b9c4ce;
+  }
+  #car-health-bar {
+    width: 160px; height: 8px; margin-top: 3px;
+    background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden;
+  }
+  #car-health-fill { height: 100%; width: 100%; background: #37c978; transition: width 0.2s; }
+  #radio { font-size: 12px; color: #9fd8e8; margin-top: 4px; }
   #speed { font-size: 22px; font-weight: bold; margin-top: 2px; }
 
   /* Centre overlays: prompt, dialogue, toasts, crosshair. */
@@ -129,7 +140,7 @@
   </div>
   <div id="top-right">
     <div class="hud-panel">
-      <div id="mission-name">Mission 1/5</div>
+      <div id="mission-name">Mission 1/6</div>
       <div id="objective-text"></div>
       <div id="objective-dist"></div>
     </div>
@@ -137,6 +148,11 @@
   </div>
   <div id="bottom-left" class="hud-panel">
     <div id="weapon">FISTS [Q]</div>
+    <div id="car-health">
+      <div id="car-health-row"><span>CAR</span><span id="car-health-text">100</span></div>
+      <div id="car-health-bar"><div id="car-health-fill"></div></div>
+    </div>
+    <div id="radio">RADIO OFF</div>
     <div id="speed"></div>
   </div>
   <div id="prompt"></div>
@@ -148,13 +164,14 @@
 <div id="screen-start" class="screen">
   <h1 id="start-title">SOLARA BAY</h1>
   <p>An open-world crime game. You are Marlo Vance, driver-for-hire in a sun-soaked
-     coastal city. Five jobs for your fixer Rico Salas — steal, run, deliver, settle, score.</p>
-  <p class="sub" id="start-sub">Five jobs. One city. No rules but Rico&rsquo;s.</p>
+     coastal city. Six jobs for your fixer Rico Salas — steal, run, deliver, settle, score,
+     and one last job.</p>
+  <p class="sub" id="start-sub">Six jobs. One city. No rules but Rico&rsquo;s.</p>
   <button id="btn-new">NEW GAME</button>
   <button id="btn-continue" class="secondary" style="display:none">CONTINUE</button>
   <div class="controls">
     <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>E</b> enter / steal car &nbsp;·&nbsp; <b>SPACE</b> handbrake<br>
-    <b>Q</b> switch weapon &nbsp;·&nbsp; <b>Click</b> punch / shoot &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>M</b> mission
+    <b>Q</b> switch weapon &nbsp;·&nbsp; <b>Click</b> punch / shoot &nbsp;·&nbsp; <b>R</b> radio &nbsp;·&nbsp; <b>Z/X</b> map zoom &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>M</b> mission
   </div>
 </div>
 
@@ -173,9 +190,9 @@
 </div>
 
 <div id="screen-win" class="screen">
-  <h2>THE BIG SCORE</h2>
-  <p>Meridian Bank is lighter, the Vipers are finished, and Rico is already counting.
-     Solara Bay is yours now, Marlo.</p>
+  <h2>THE LAST JOB</h2>
+  <p>Six jobs done. Meridian Bank is lighter, the Viper boss is on foot, and Rico is
+     already counting. Solara Bay is yours now, Marlo.</p>
   <p class="sub">Total take: <b id="win-cash">$0</b></p>
   <button id="btn-freeroam">KEEP EXPLORING — FREE ROAM</button>
   <button id="btn-playagain" class="secondary">PLAY AGAIN</button>

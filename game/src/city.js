@@ -25,6 +25,7 @@ export const LOCATIONS = {
   bank: { x: -40, z: -80, name: 'Meridian Bank' },
   safehouse: { x: 140, z: 80, name: 'Boardwalk Safehouse' },
   start: { x: 12, z: 30, name: 'Plaza steps' },
+  bossCoupe: { x: 128, z: 48, name: 'Viper boss coupe' },
 };
 
 // Make a mesh, put it where it belongs, set its shadow flags, add it.
@@ -49,13 +50,9 @@ function flat(THREE, scene, w, d, color, x, y, z) {
   return mesh;
 }
 
-function layGround(THREE, scene) {
+// Ground, ocean, sand and boardwalk: the island the city sits on.
+function layTerrain(THREE, scene) {
   flat(THREE, scene, 460, 460, 0x6f7a58, 0, 0, 0);
-}
-
-function layWater(THREE, scene) {
-  // Ocean east of the city, sand between the water and the streets, and a
-  // boardwalk strip along the sand.
   flat(THREE, scene, 280, 460, 0x1e6f9e, 300, 0.06, 0);
   flat(THREE, scene, 22, 340, 0xd9c08a, 151, 0.08, 0);
   flat(THREE, scene, 8, 300, 0x8a6b4a, 138, 0.1, 0);
@@ -194,15 +191,10 @@ function makePalm(THREE, rng, x, z) {
   return group;
 }
 
-export function initCity(G) {
-  const THREE = window.THREE;
-  const rng = makeRng(20261117);
-  const scene = G.scene;
-  const colliders = [];
-
+// Sky, sun and shadows, set up once and never changed during a run.
+function setupSky(THREE, scene, G) {
   scene.background = new THREE.Color(0x87b5d6);
   scene.fog = new THREE.Fog(0x9fc3dd, 180, 420);
-
   const sky = new THREE.HemisphereLight(0xcfe8ff, 0x5a5a48, 0.95);
   scene.add(sky);
   const sun = new THREE.DirectionalLight(0xfff2d0, 1.6);
@@ -218,9 +210,16 @@ export function initCity(G) {
   sun.shadow.normalBias = 0.6;
   scene.add(sun);
   G.sun = sun;
+}
 
-  layGround(THREE, scene);
-  layWater(THREE, scene);
+export function initCity(G) {
+  const THREE = window.THREE;
+  const rng = makeRng(20261117);
+  const scene = G.scene;
+  const colliders = [];
+
+  setupSky(THREE, scene, G);
+  layTerrain(THREE, scene);
   layRoads(THREE, scene);
   layPlaza(THREE, scene);
 

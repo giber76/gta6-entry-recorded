@@ -4,6 +4,7 @@
 
 import { setWanted } from './police.js';
 import { startMission } from './missions.js';
+import { damageCar, repairCar } from './vehicles.js';
 
 // Round to one decimal place, for the snapshot's numeric fields.
 function round1(v) {
@@ -24,6 +25,8 @@ function snapshotDynamic(G, p) {
     enemies: G.enemies.filter((e) => !e.dead).length,
     policeCars: G.policeCars.length,
     officers: G.officers.length,
+    parkedCars: (G.parkedCars || []).filter((c) => !c.wrecked).length,
+    trafficCars: (G.trafficCars || []).length,
     wantedTimer: round1(G.wantedTimer ?? 0),
     nearestPolice: nearestGap(G.policeCars, p),
     nearestOfficer: nearestGap(G.officers, p),
@@ -47,6 +50,9 @@ export function initDebug(G) {
         inCar: p.inCar,
         weapon: p.weapon,
         hasPistol: p.hasPistol,
+        carHealth: p.inCar && p.car ? Math.round(p.car.health) : null,
+        radio: G.audio ? G.audio.radioLabel() : 'RADIO OFF',
+        mapZoom: G.mapZoom ?? 1,
         ...snapshotDynamic(G, p),
       };
     },
@@ -94,7 +100,7 @@ export function initDebug(G) {
     },
 
     setMission(i) {
-      if (i >= 0 && i < 5) startMission(G, i);
+      if (i >= 0 && i < 6) startMission(G, i);
       return api.state();
     },
 
@@ -111,6 +117,32 @@ export function initDebug(G) {
 
     heal() {
       G.player.health = 100;
+      return api.state();
+    },
+
+    // Damage the car Marlo is driving (or the nearest car on foot), so a
+    // test can stage smoke, fire and explosions.
+    damageCar(amount) {
+      const p = G.player;
+      const car = p.inCar && p.car
+        ? p.car
+        : [...(G.policeCars || []), ...(G.trafficCars || []), ...(G.parkedCars || [])]
+          .filter((c) => !c.wrecked)
+          .sort((a, b) => Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) - Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z))[0];
+      if (car) damageCar(G, car, amount);
+      return api.state();
+    },
+
+    // Repair the car Marlo is driving back to full health.
+    repairCar() {
+      const p = G.player;
+      if (p.inCar && p.car) repairCar(G, p.car);
+      return api.state();
+    },
+
+    // Set the radio station by index (-1 = off).
+    setRadio(i) {
+      if (G.audio) G.audio.setStation(i);
       return api.state();
     },
 
@@ -132,6 +164,35 @@ export function initDebug(G) {
       return api.state();
     },
 
+    // Point the camera at the nearest police car, for drive-by tests.
+    faceNearestPoliceCar() {
+      const p = G.player;
+      if (G.policeCars.length === 0) return api.state();
+      const mark = G.policeCars.reduce((best, c) => {
+        const gap = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+        const bestGap = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+        return gap < bestGap ? c : best;
+      });
+      G.camYaw = Math.atan2(mark.pos.x - p.pos.x, mark.pos.z - p.pos.z);
+      return api.state();
+    },
+
+    // Point the camera at the nearest parked car (not the one Marlo is
+    // driving), for drive-by tests. Re-aim before each shot: traffic can
+    // nudge the car, and a stale aim misses the cabin by a hair.
+    faceNearestParkedCar() {
+      const p = G.player;
+      const cars = (G.parkedCars || []).filter((c) => !c.isPlayer && !c.wrecked);
+      if (cars.length === 0) return api.state();
+      const mark = cars.reduce((best, c) => {
+        const gap = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+        const bestGap = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+        return gap < bestGap ? c : best;
+      });
+      G.camYaw = Math.atan2(mark.pos.x - p.pos.x, mark.pos.z - p.pos.z);
+      return api.state();
+    },
+
     // Dispatch a real keyboard event, as if the key had been pressed.
     key(code, down) {
       const ev = new KeyboardEvent(down ? 'keydown' : 'keyup', { code, bubbles: true });
@@ -140,8 +201,8 @@ export function initDebug(G) {
     },
 
     click() {
-      if (G.onClick) G.onClick();
-      return api.state();
+      const shot = G.onClick ? G.onClick() : null;
+      return { ...api.state(), shot };
     },
 
     // How far the current objective is, in metres.

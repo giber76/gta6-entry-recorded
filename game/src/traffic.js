@@ -1,6 +1,7 @@
 // traffic.js — AI cars cruising the road grid. They turn at intersections,
 // brake for the player's car ahead of them, and wrap around the city edge
-// so the streets never empty out. Spawns are seeded; turns and wrap-arounds
+// so the streets never empty out. A wrecked traffic car is dealt back onto
+// the grid a few seconds later. Spawns are seeded; turns and wrap-arounds
 // roll plain Math.random.
 
 import { ROADS } from './city.js';
@@ -23,24 +24,37 @@ function dealStart(dice) {
   return { along, street, offset, sense, x, z, bearing };
 }
 
+// Build one traffic car from a dealt spot and a speed draw.
+function buildTrafficCar(G, spot, dice) {
+  const ride = createCar(G, {
+    x: spot.x,
+    z: spot.z,
+    heading: spot.bearing,
+    color: PAINT_JOBS[G.trafficCars.length % PAINT_JOBS.length],
+  });
+  ride.traffic = {
+    axis: spot.along,
+    dir: spot.sense,
+    lane: spot.offset,
+    speed: dice.range(8, 12),
+    cruise: dice.range(8, 12),
+  };
+  return ride;
+}
+
 export function spawnTraffic(G) {
   const dice = makeRng(777);
   G.trafficCars = [];
+  G.trafficRespawn = [];
+  G.trafficRng = makeRng(2002);
+  // A wrecked traffic car leaves the street at once; a fresh one is dealt
+  // onto the grid a few seconds later, so the city never empties out.
+  G.onTrafficCarWrecked = () => {
+    G.trafficRespawn.push(8);
+  };
   for (let i = 0; i < CARS_ON_ROAD; i++) {
     const spot = dealStart(dice);
-    const ride = createCar(G, {
-      x: spot.x,
-      z: spot.z,
-      heading: spot.bearing,
-      color: PAINT_JOBS[i % PAINT_JOBS.length],
-    });
-    ride.traffic = {
-      axis: spot.along,
-      dir: spot.sense,
-      lane: spot.offset,
-      speed: dice.range(8, 12),
-      cruise: dice.range(8, 12),
-    };
+    const ride = buildTrafficCar(G, spot, dice);
     G.trafficCars.push(ride);
   }
   return G.trafficCars;
@@ -118,6 +132,18 @@ function wrapAround(ride) {
   brain.lane = lane;
 }
 
+// Deal a replacement car onto the grid for each expired respawn timer.
+function processRespawns(G, dt) {
+  for (let i = G.trafficRespawn.length - 1; i >= 0; i--) {
+    G.trafficRespawn[i] -= dt;
+    if (G.trafficRespawn[i] > 0) continue;
+    G.trafficRespawn.splice(i, 1);
+    const spot = dealStart(G.trafficRng);
+    const ride = buildTrafficCar(G, spot, G.trafficRng);
+    G.trafficCars.push(ride);
+  }
+}
+
 export function updateTraffic(G, dt) {
   for (const ride of G.trafficCars) {
     const brain = ride.traffic;
@@ -131,4 +157,6 @@ export function updateTraffic(G, dt) {
     const spin = brain.speed * dt * 2.6;
     for (const w of ride.wheels) w.rotation.x += spin;
   }
+  // Respawn timers tick down in seconds.
+  if (G.trafficRespawn.length > 0) processRespawns(G, dt);
 }
