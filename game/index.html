@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solara Bay — a GTA VI fan game</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #1a0f0a; font-family: 'Segoe UI', system-ui, sans-serif; }
+  #game { display: block; width: 100vw; height: 100vh; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; }
+  #hud-top { position: absolute; top: 14px; left: 16px; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
+  #hud-cash { font-size: 30px; font-weight: 800; color: #7dff9a; }
+  #hud-wanted { font-size: 22px; letter-spacing: 3px; }
+  #hud-objective { font-size: 15px; color: #ffe9a8; margin-top: 4px; max-width: 420px; }
+  #hud-health-wrap { width: 200px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); margin-top: 6px; }
+  #hud-health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #37d67a, #7dff9a); }
+  #hud-bottom { position: absolute; bottom: 14px; left: 16px; font-size: 15px; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
+  #hud-speed { font-size: 26px; font-weight: 700; }
+  #hud-radio { color: #ffd98a; margin-top: 2px; }
+  #hud-hold { position: absolute; top: 38%; left: 50%; transform: translateX(-50%); font-size: 22px; font-weight: 700; color: #ffd928; text-shadow: 0 2px 6px rgba(0,0,0,.8); display: none; }
+  #minimap { position: absolute; top: 14px; right: 14px; width: 168px; height: 168px; border: 2px solid rgba(255,255,255,.55); background: #1a5f8a; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,.55) 100%); }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(10,5,2,.72); color: #fff; text-align: center; z-index: 10; }
+  .overlay h1 { font-size: 64px; margin: 0 0 8px; letter-spacing: 4px; color: #ffb347; text-shadow: 0 4px 18px rgba(255,120,0,.6); }
+  .overlay h2 { font-size: 40px; margin: 0 0 10px; color: #ffb347; }
+  .overlay p { font-size: 17px; max-width: 560px; line-height: 1.5; margin: 6px 0; color: #f3e2c7; }
+  .overlay button { pointer-events: auto; margin-top: 18px; padding: 14px 34px; font-size: 19px; font-weight: 700; color: #1a0f0a; background: #ffb347; border: none; border-radius: 6px; cursor: pointer; }
+  .overlay button:hover { background: #ffc76a; }
+  .overlay .keys { font-size: 14px; color: #cbb89a; margin-top: 16px; line-height: 1.7; }
+  #pause, #win, #busted { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="hud-top">
+    <div id="hud-cash">$0</div>
+    <div id="hud-wanted">☆☆☆</div>
+    <div id="hud-health-wrap"><div id="hud-health-fill"></div></div>
+    <div id="hud-objective"></div>
+  </div>
+  <div id="hud-bottom">
+    <div id="hud-speed"></div>
+    <div id="hud-radio">SOLARA FM</div>
+  </div>
+  <div id="hud-hold"></div>
+  <canvas id="minimap" width="168" height="168"></canvas>
+</div>
+<div id="vignette"></div>
+<div id="menu" class="overlay">
+  <h1>SOLARA BAY</h1>
+  <p>A fan-made GTA VI-style open city. Drive, fight, lose the cops, and run six jobs from Rico's Garage to the bank vault — sunset over Leonida's bay.</p>
+  <button id="btn-new">New Game</button>
+  <button id="btn-continue">Continue</button>
+  <div class="keys">W drive / walk &nbsp; A D steer &nbsp; S brake &nbsp; E enter / exit car<br>R radio &nbsp; Z / X minimap zoom &nbsp; Mouse aim &nbsp; Click shoot &nbsp; Esc pause</div>
+</div>
+<div id="pause" class="overlay">
+  <h2>PAUSED</h2>
+  <p>Solara Bay waits for you.</p>
+  <button id="btn-resume">Resume</button>
+</div>
+<div id="win" class="overlay">
+  <h2>SOLARA BAY IS YOURS</h2>
+  <p>All six jobs done — $12,000 in the bag, the boss coupe parked at Rico's. The city never forgets a legend.</p>
+  <button id="btn-freeroam">Free Roam</button>
+  <button id="btn-menu">Main Menu</button>
+</div>
+<div id="busted" class="overlay">
+  <h2>BUSTED</h2>
+  <p>The Solara Bay police caught up with Marlo.</p>
+  <button id="btn-retry">Try Again</button>
+</div>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+<script type="module">
+  import { boot } from './src/main.js';
+  boot();
+</script>
+</body>
+</html>
