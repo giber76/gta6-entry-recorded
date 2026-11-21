@@ -10,7 +10,7 @@
 // file must never reach for document, window, or any other browser
 // global — it only copies files and writes one JSON file.
 
-import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -22,11 +22,32 @@ const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 // outside the grader, /output is the conventional default.
 const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
+// Remove a path and everything under it. Files copied out of the repo
+// keep the repo's modes, so a copied tree can be read-only — and unlinking
+// a file needs write permission on its parent directory. Make every
+// directory writable on the way down, so the clean slate below can never
+// fail on modes.
+function removeTree(path: string): void {
+  const stat = lstatSync(path);
+  if (stat.isDirectory()) {
+    chmodSync(path, 0o755);
+    for (const entry of readdirSync(path)) {
+      removeTree(join(path, entry));
+    }
+  }
+  rmSync(path, { recursive: true, force: true });
+}
+
 // Start from a clean slate so a stale file from an earlier run can never
 // leak into this one: the grader runs this program twice and compares the
 // two outputs byte for byte, so nothing may survive from a previous run.
-rmSync(outputDir, { recursive: true, force: true });
+// The output directory itself must never be removed: in the grader it is
+// a mounted directory, and removing a mount point fails (EBUSY) — so
+// clear only its contents.
 mkdirSync(outputDir, { recursive: true });
+for (const entry of readdirSync(outputDir)) {
+  removeTree(join(outputDir, entry));
+}
 
 // The game itself, exactly as the browser plays it.
 cpSync(join(repoRoot, 'game'), join(outputDir, 'game'), { recursive: true });
