@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solara Bay — an open-world crime game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0c1220; font-family: Arial, Helvetica, sans-serif; }
+  #game-canvas { display: block; width: 100vw; height: 100vh; }
+  .hud { position: fixed; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; z-index: 5; }
+  #hud-tl { top: 14px; left: 16px; }
+  #cash { font-size: 30px; font-weight: bold; color: #7dff9a; }
+  #health-row { margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+  #health-bar { width: 170px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#37d67a,#7dff9a); }
+  #health-num { font-size: 13px; font-weight: bold; }
+  #wanted { margin-top: 6px; font-size: 22px; letter-spacing: 3px; }
+  #objective { margin-top: 8px; font-size: 14px; max-width: 430px; line-height: 1.35; background: rgba(0,0,0,.45); padding: 7px 10px; border-radius: 6px; border-left: 4px solid #ffd23e; }
+  #hud-tr { top: 14px; right: 16px; text-align: right; }
+  #radio { font-size: 16px; font-weight: bold; color: #ffd23e; }
+  #clock { font-size: 15px; margin-top: 4px; color: #cfe8ff; }
+  #hud-bl { bottom: 16px; left: 16px; }
+  #speed { font-size: 34px; font-weight: bold; }
+  #weapon { font-size: 15px; margin-top: 2px; }
+  #hud-br { bottom: 16px; right: 16px; }
+  #minimap { width: 200px; height: 200px; border: 2px solid rgba(255,255,255,.65); border-radius: 8px; background: #2e7fb8; box-shadow: 0 2px 10px rgba(0,0,0,.5); }
+  #toast { position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%); background: rgba(10,14,24,.85); color: #ffe9a8; font-size: 15px; font-weight: bold; padding: 9px 16px; border-radius: 8px; border: 1px solid #ffd23e; opacity: 0; transition: opacity .3s; z-index: 6; pointer-events: none; max-width: 520px; text-align: center; }
+  #toast.show { opacity: 1; }
+  #flash { position: fixed; inset: 0; pointer-events: none; z-index: 7; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(255,0,0,.45) 100%); }
+  #flash.hit { animation: flashHit .45s ease-out; }
+  @keyframes flashHit { 0% { opacity: 1; } 100% { opacity: 0; } }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,16,32,.55), rgba(10,16,32,.82)); z-index: 10; color: #fff; text-align: center; }
+  .overlay h1 { font-size: 64px; letter-spacing: 6px; color: #ffd23e; text-shadow: 0 4px 0 #b8452f, 0 8px 24px rgba(0,0,0,.7); }
+  .overlay h2 { font-size: 20px; margin-top: 8px; color: #cfe8ff; font-weight: normal; }
+  .overlay .sub { margin-top: 18px; font-size: 15px; line-height: 1.7; color: #e8e4d8; max-width: 560px; }
+  .overlay button { pointer-events: auto; margin-top: 26px; font-size: 20px; font-weight: bold; padding: 14px 34px; border-radius: 10px; border: 2px solid #ffd23e; background: #e2483d; color: #fff; cursor: pointer; box-shadow: 0 4px 0 #7a1f1a; }
+  .overlay button:hover { background: #f0564a; }
+  .overlay button.secondary { background: #1f2a44; box-shadow: 0 4px 0 #0c1220; }
+  .overlay button.secondary:hover { background: #2c3d5e; }
+  .overlay .keys { margin-top: 22px; font-size: 13px; color: #9fb4c9; line-height: 1.8; }
+  #win h1 { color: #7dff9a; text-shadow: 0 4px 0 #1a7a3a, 0 8px 24px rgba(0,0,0,.7); }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div class="hud" id="hud-tl">
+  <div id="cash">$0</div>
+  <div id="health-row"><div id="health-bar"><div id="health-fill"></div></div><span id="health-num">100</span></div>
+  <div id="wanted">☆☆☆</div>
+  <div id="objective">Welcome to Solara Bay.</div>
+</div>
+<div class="hud" id="hud-tr">
+  <div id="radio">♪ OFF</div>
+  <div id="clock">00:00</div>
+</div>
+<div class="hud" id="hud-bl">
+  <div id="speed"></div>
+  <div id="weapon"></div>
+</div>
+<div class="hud" id="hud-br"><canvas id="minimap" width="200" height="200"></canvas></div>
+<div id="toast"></div>
+<div id="flash"></div>
+
+<div class="overlay" id="menu">
+  <h1 id="mission-title">SOLARA BAY</h1>
+  <h2>A sun-soaked open-world crime game</h2>
+  <div class="sub">Marlo is a driver with nothing but a fast car and a debt to pay.
+  Six jobs stand between him and $12,000 — steal the coupe, lose the heat,
+  run the package, survive the marina, crack the bank, and take the boss's car.</div>
+  <button id="btn-new">▶ NEW GAME</button>
+  <button id="btn-freeroam-menu" class="secondary">FREE ROAM</button>
+  <div class="keys">W A S D — drive / walk &nbsp;·&nbsp; E — enter / exit car &nbsp;·&nbsp; Mouse — aim<br>
+  Click — shoot &nbsp;·&nbsp; R — radio &nbsp;·&nbsp; Z / X — minimap zoom &nbsp;·&nbsp; Esc — pause</div>
+</div>
+
+<div class="overlay" id="win" style="display:none">
+  <h1>YOU WIN</h1>
+  <h2>All six jobs done — Marlo takes home $12,000.</h2>
+  <div class="sub">Solara Bay is yours now. Cruise the coast, keep the coupe, and watch the sunset.</div>
+  <button id="btn-freeroam" class="secondary">FREE ROAM</button>
+</div>
+
+<div class="overlay" id="busted" style="display:none">
+  <h1>BUSTED</h1>
+  <h2>The Solara Bay police caught up with Marlo.</h2>
+  <button id="btn-retry">↻ TRY AGAIN</button>
+</div>
+
+<script type="module">
+  import { boot } from './src/main.js';
+  boot();
+</script>
+</body>
+</html>
