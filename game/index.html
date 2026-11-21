@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Solara Bay — Open World</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a0f2e; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #fff; }
+  #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  #hud-top-left { position: absolute; top: 14px; left: 14px; }
+  #hud-cash { font-size: 30px; font-weight: 800; color: #7dff9e; text-shadow: 0 2px 6px #000; letter-spacing: 1px; }
+  #hud-wanted { font-size: 24px; letter-spacing: 3px; color: #ffd23f; text-shadow: 0 2px 6px #000; margin-top: 2px; min-height: 30px; }
+  #hud-health-row { margin-top: 6px; width: 210px; }
+  #hud-health-label { font-size: 12px; font-weight: 700; letter-spacing: 2px; color: #ffb3c1; text-shadow: 0 1px 3px #000; }
+  .bar { height: 10px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35); border-radius: 5px; overflow: hidden; margin-top: 2px; }
+  .bar > div { height: 100%; }
+  #hud-health-fill { width: 100%; background: linear-gradient(90deg, #ff5f7e, #ff9db1); }
+  #hud-radio { margin-top: 8px; font-size: 13px; font-weight: 700; letter-spacing: 2px; color: #ffe9a8; text-shadow: 0 1px 3px #000; }
+  #hud-mission { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); max-width: 46%;
+    background: rgba(10, 6, 28, .72); border: 1px solid rgba(255, 210, 63, .55); border-radius: 10px;
+    padding: 10px 18px; text-align: center; }
+  #hud-mission-title { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #ffd23f; }
+  #hud-mission-text { font-size: 13px; color: #f2ecff; margin-top: 3px; line-height: 1.35; }
+  #hud-car { position: absolute; left: 14px; bottom: 14px; width: 210px; }
+  #hud-speed { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 6px #000; }
+  #hud-speed small { font-size: 13px; font-weight: 600; color: #ffd23f; }
+  #hud-carhealth-label { font-size: 12px; font-weight: 700; letter-spacing: 2px; color: #9fd8ff; text-shadow: 0 1px 3px #000; margin-top: 2px; }
+  #hud-carhealth-fill { width: 100%; background: linear-gradient(90deg, #4fc3ff, #9fe8ff); }
+  #minimap { position: absolute; right: 14px; bottom: 14px; width: 180px; height: 180px;
+    border: 2px solid rgba(255, 210, 63, .8); border-radius: 10px; background: #0a2a52;
+    box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+    border: 2px solid rgba(255,255,255,.9); border-radius: 50%; box-shadow: 0 0 4px #000; }
+  .overlay { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: linear-gradient(160deg, rgba(26,10,46,.88), rgba(64,16,60,.82) 55%, rgba(10,30,70,.86)); }
+  .overlay h1 { font-size: 64px; font-weight: 900; letter-spacing: 6px; color: #ffd23f;
+    text-shadow: 0 4px 0 #b3541e, 0 8px 24px #000; }
+  .overlay h2 { font-size: 20px; font-weight: 600; color: #ffb3c1; letter-spacing: 3px; margin-top: 6px; }
+  .overlay p { margin-top: 18px; font-size: 15px; line-height: 1.6; color: #efe8ff; max-width: 560px; }
+  .overlay .keys { font-size: 13px; color: #c9b8ff; margin-top: 10px; line-height: 1.7; }
+  .big-btn { pointer-events: auto; margin-top: 26px; padding: 15px 44px; font-size: 20px; font-weight: 800;
+    letter-spacing: 2px; color: #1a0f2e; background: linear-gradient(180deg, #ffe27a, #ffb52e);
+    border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 6px 0 #b3541e, 0 10px 24px rgba(0,0,0,.5); }
+  .big-btn:hover { filter: brightness(1.08); }
+  .big-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #b3541e; }
+  #win h1 { color: #7dff9e; text-shadow: 0 4px 0 #1e7a3a, 0 8px 24px #000; }
+  #busted h1 { color: #ff5f7e; text-shadow: 0 4px 0 #7a1e2e, 0 8px 24px #000; }
+  #hud-toast { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%);
+    font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #ffd23f;
+    text-shadow: 0 2px 6px #000; opacity: 0; transition: opacity .3s; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+<div id="hud">
+  <div id="hud-top-left">
+    <div id="hud-cash">$0</div>
+    <div id="hud-wanted"></div>
+    <div id="hud-health-row">
+      <div id="hud-health-label">HEALTH</div>
+      <div class="bar"><div id="hud-health-fill"></div></div>
+    </div>
+    <div id="hud-radio">RADIO OFF</div>
+  </div>
+  <div id="hud-mission">
+    <div id="hud-mission-title">SOLARA BAY</div>
+    <div id="hud-mission-text">Welcome to Solara Bay.</div>
+  </div>
+  <div id="hud-car" class="hidden">
+    <div id="hud-speed">0 <small>km/h</small></div>
+    <div id="hud-carhealth-label">CAR</div>
+    <div class="bar"><div id="hud-carhealth-fill"></div></div>
+  </div>
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="crosshair" class="hidden"></div>
+  <div id="hud-toast"></div>
+</div>
+<div id="menu" class="overlay">
+  <h1>SOLARA BAY</h1>
+  <h2>A SUN-SOAKED OPEN-WORLD CRIME STORY</h2>
+  <p>Marlo, a driver with nothing to lose, takes six jobs across a coastal city —
+     steal the coupe, lose the heat, run the package, settle the marina, rob the
+     bank, and take the boss's car. Drive, fight, and don't get busted.</p>
+  <div class="keys">W A S D — drive / walk &nbsp;·&nbsp; E — enter car / hold at the vault &nbsp;·&nbsp; Mouse — shoot<br>
+     R — radio &nbsp;·&nbsp; Z / X — minimap zoom &nbsp;·&nbsp; Esc — pause</div>
+  <button id="btn-new" class="big-btn">NEW GAME</button>
+</div>
+<div id="win" class="overlay hidden">
+  <h1>YOU WIN</h1>
+  <h2>THE LAST JOB IS DONE — $12,000</h2>
+  <p>Marlo drives the boss's black coupe into Rico's garage as the sun sets over
+     Solara Bay. The city is yours now.</p>
+  <button id="btn-freeroam" class="big-btn">FREE ROAM</button>
+</div>
+<div id="busted" class="overlay hidden">
+  <h1>BUSTED</h1>
+  <h2>THE SOLARA BAY PD GOT YOU</h2>
+  <p>Marlo's run ends in the back of a cruiser. The city keeps its secrets.</p>
+  <button id="btn-retry" class="big-btn">TRY AGAIN</button>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
