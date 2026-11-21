@@ -19,6 +19,14 @@ const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR || '/output';
 // chmod'ed to 0755 on the way down first: cpSync preserves read-only
 // source modes, and unlinking needs write permission on the parent.
 function clearContents(dir: string): void {
+  // Make this directory writable BEFORE touching its contents:
+  // cpSync preserves read-only source modes, and unlinking a file
+  // needs write permission on its parent directory.
+  try {
+    chmodSync(dir, 0o755);
+  } catch {
+    // best effort; the removes below report the real error
+  }
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -29,11 +37,6 @@ function clearContents(dir: string): void {
     const p = join(dir, e.name);
     if (e.isDirectory()) {
       clearContents(p);
-      try {
-        chmodSync(p, 0o755);
-      } catch {
-        // best effort; the remove below reports the real error
-      }
       rmSync(p, { recursive: true, force: true });
     } else {
       rmSync(p, { force: true });
