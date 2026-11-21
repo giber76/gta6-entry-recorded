@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solara Bay — Make GTA 6</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1210; font-family: 'Segoe UI', Arial, sans-serif; }
+  #game { display: block; width: 100%; height: 100%; touch-action: none; }
+  .hud { position: absolute; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); pointer-events: none; z-index: 5; }
+  #hud-top-right { top: 14px; right: 16px; text-align: right; }
+  #hud-cash { font-size: 30px; font-weight: 800; color: #7dd87d; letter-spacing: 1px; }
+  #hud-wanted { font-size: 26px; letter-spacing: 3px; margin-top: 2px; }
+  #hud-radio { font-size: 15px; color: #ffd98a; margin-top: 4px; font-weight: 600; }
+  #hud-speed { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  #hud-top-left { top: 14px; left: 16px; }
+  #hud-mission { font-size: 19px; font-weight: 800; color: #ffe9b0; }
+  #hud-objective { font-size: 14px; margin-top: 4px; max-width: 340px; line-height: 1.35; }
+  #hud-health { width: 210px; height: 12px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.5); border-radius: 6px; margin-top: 8px; overflow: hidden; }
+  #hud-health-fill { height: 100%; width: 100%; background: #4caf50; }
+  #hud-bottom-left { left: 16px; bottom: 14px; font-size: 12.5px; line-height: 1.6; color: rgba(255,255,255,0.85); }
+  #minimap { position: absolute; right: 16px; bottom: 14px; width: 190px; height: 190px; border: 2px solid rgba(255,255,255,0.55); border-radius: 6px; background: #14486e; z-index: 5; }
+  #vignette { position: absolute; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(200,0,0,0.55) 100%); }
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; text-align: center; color: #fff; }
+  #menu { background: linear-gradient(180deg, rgba(20,10,20,0.25) 0%, rgba(20,10,20,0.78) 100%); }
+  #menu h1 { font-size: 64px; font-weight: 900; letter-spacing: 4px; color: #ffd94a; text-shadow: 0 4px 0 #b03a2e, 0 8px 24px rgba(0,0,0,0.7); }
+  #menu h2 { font-size: 20px; font-weight: 600; color: #ffe9b0; margin: 8px 0 4px; letter-spacing: 2px; }
+  #menu p { font-size: 15px; color: rgba(255,255,255,0.9); max-width: 560px; line-height: 1.6; margin: 10px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+  #menu .controls { font-size: 13.5px; color: rgba(255,255,255,0.85); line-height: 1.9; margin: 12px 0 20px; }
+  .big-btn { pointer-events: auto; cursor: pointer; font-size: 20px; font-weight: 800; letter-spacing: 1px;
+    color: #1a1a1a; background: linear-gradient(180deg, #ffe27a, #ffb52e); border: none; border-radius: 8px;
+    padding: 14px 42px; margin: 6px; box-shadow: 0 4px 0 #9a6a00, 0 8px 20px rgba(0,0,0,0.5); }
+  .big-btn:hover { filter: brightness(1.08); }
+  .big-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #9a6a00; }
+  #win-screen, #busted-screen { background: rgba(10,10,16,0.72); display: none; }
+  #win-screen h1 { font-size: 56px; color: #7dd87d; text-shadow: 0 4px 24px rgba(0,0,0,0.8); }
+  #win-screen p { font-size: 19px; margin: 12px 0 20px; }
+  #busted-screen h1 { font-size: 56px; color: #ff5a4a; text-shadow: 0 4px 24px rgba(0,0,0,0.8); }
+  #busted-screen p { font-size: 17px; margin: 12px 0 20px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+<div class="hud" id="hud-top-left">
+  <div id="hud-mission">M1 · The First Coupe</div>
+  <div id="hud-objective">Steal the coupe at the lot (24, 26)</div>
+  <div id="hud-health"><div id="hud-health-fill"></div></div>
+</div>
+<div class="hud" id="hud-top-right">
+  <div id="hud-cash">$0</div>
+  <div id="hud-wanted">☆☆☆</div>
+  <div id="hud-radio">♪ OFF</div>
+  <div id="hud-speed"></div>
+</div>
+<div class="hud" id="hud-bottom-left">
+  W A S D — drive / walk &nbsp;·&nbsp; E — enter car / hold at vault<br>
+  R — radio &nbsp;·&nbsp; Z / X — map zoom &nbsp;·&nbsp; Mouse drag — camera &nbsp;·&nbsp; Esc — pause
+</div>
+<canvas id="minimap" width="190" height="190"></canvas>
+
+<div class="screen" id="menu">
+  <h1>SOLARA BAY</h1>
+  <h2>A MAKE GTA 6 STORY</h2>
+  <p>Marlo needs $12,000 and one last clean getaway. Six jobs across a
+  sun-soaked coastal city — steal the coupe, lose the heat, run the package,
+  survive the marina, rob the bank, and take the boss's car home.</p>
+  <div class="controls">
+    W A S D — drive / walk &nbsp;·&nbsp; E — enter &amp; exit cars (hold E at the vault)<br>
+    Click — shoot &nbsp;·&nbsp; R — radio &nbsp;·&nbsp; Z / X — minimap zoom &nbsp;·&nbsp; Esc — pause
+  </div>
+  <button class="big-btn" id="btn-new">▶ &nbsp;NEW GAME</button>
+</div>
+
+<div class="screen" id="win-screen">
+  <h1>YOU WIN</h1>
+  <p>All six jobs done. The take: <b id="win-cash">$12,000</b> — Solara Bay is yours, Marlo.</p>
+  <button class="big-btn" id="btn-freeroam">FREE ROAM</button>
+</div>
+
+<div class="screen" id="busted-screen">
+  <h1>BUSTED</h1>
+  <p>The Solara Bay PD caught up with Marlo. The story ends here — unless you run it back.</p>
+  <button class="big-btn" id="btn-retry">↻ &nbsp;TRY AGAIN</button>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
